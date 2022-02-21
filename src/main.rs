@@ -1,16 +1,17 @@
 use bevy::{
     core::cast_slice,
     core_pipeline::node::MAIN_PASS_DEPENDENCIES,
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
     render::{
         render_graph::{self, RenderGraph},
         render_resource::*,
-        // render_resource::std140::AsStd140,
         RenderApp,
         renderer::{RenderContext, RenderDevice, RenderQueue},
         RenderStage,
     },
-    window::WindowDescriptor,
+    window::{WindowDescriptor, WindowId},
+    winit::WinitWindows,
 };
 
 fn main() {
@@ -22,12 +23,23 @@ fn main() {
         })
         .add_plugins(DefaultPlugins)
         .add_plugin(SimplexComputePlugin)
+        .add_plugin(LogDiagnosticsPlugin::default())
+        .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_startup_system(setup)
         .run();
 }
 
-fn setup(mut commands: Commands) {
-    commands.spawn_bundle(PerspectiveCameraBundle::new_3d());
+fn setup(
+    mut commands: Commands,
+    windows: Res<WinitWindows>,
+) {
+    commands.spawn_bundle(PerspectiveCameraBundle {
+        transform: Transform::from_xyz(80.0, 80.0, 300.0),
+        ..Default::default()
+    });
+
+    let primary = windows.get_window(WindowId::primary()).unwrap();
+    primary.set_title("QGame");
 }
 
 struct SimplexComputePlugin;
@@ -181,9 +193,6 @@ impl render_graph::Node for DispatchSimplex {
             let slice = &height_buf.slice(..);
             device.map_buffer(slice, MapMode::Read);
             let out_vec: Vec<f32> = cast_slice(&slice.get_mapped_range()).to_vec();
-            for x in out_vec {
-                println!("{}", x);
-            }
             height_buf.unmap()
         }
 
