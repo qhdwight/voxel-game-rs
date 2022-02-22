@@ -8,15 +8,16 @@ struct VoxelBuffer {
 
 struct MeshBuffer {
     vertices: array<vec3<f32>>;
+    indices: array<u32>;
 };
 
 [[group(0), binding(0)]]
-var<storage, read> inVoxels: VoxelBuffer;
+var<storage, read> in_voxels: VoxelBuffer;
 
 [[group(0), binding(1)]]
-var<storage, read_write> outMesh: MeshBuffer;
+var<storage, read_write> out_mesh: MeshBuffer;
 
-[[stage(compute), workgroup_size(32, 1, 1)]]
+[[stage(compute), workgroup_size(8, 8, 8)]]
 fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
-    let voxel = inVoxels.data[invocation_id.x * 32u * 32u + invocation_id.y * 32u + invocation_id.z];
+    let voxel = in_voxels.data[invocation_id.x * 32u * 32u + invocation_id.y * 32u + invocation_id.z];
 }
