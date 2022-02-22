@@ -36,7 +36,7 @@ fn simplexNoise2(v: vec2<f32>) -> f32 {
   return 130. * dot(m, g);
 }
 
-[[stage(compute), workgroup_size(1024, 1, 1)]]
+[[stage(compute), workgroup_size(32, 1, 1)]]
 fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
     let index = invocation_id.x + invocation_id.y * 32u;
     let point = in_points.data[index];
