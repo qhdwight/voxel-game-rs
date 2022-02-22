@@ -61,12 +61,10 @@ fn setup(
 }
 
 fn marching_cubes(
-    pbr_bundle: Res<PbrBundle>,
+    mut query: Query<(&Handle<Mesh>)>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
-
-
-    let mesh = meshes.get_mut(&pbr_bundle.mesh).unwrap();
-    // mesh.set_attribute()
+    // let mesh = meshes.get_mut(&pbr_bundle.mesh).unwrap();
 }
 
 struct VoxelsPlugin;
@@ -76,15 +74,9 @@ impl Plugin for VoxelsPlugin {
         let render_app = app.sub_app_mut(RenderApp);
         render_app
             .init_resource::<SimplexPipeline>()
+            .init_resource::<VoxelsPipeline>()
             .add_system_to_stage(RenderStage::Prepare, prepare_buffer)
             .add_system_to_stage(RenderStage::Queue, queue_bind_group);
-
-        let points: BufferVec<Vec2> = BufferVec::new(BufferUsages::STORAGE);
-        let heights: BufferVec<f32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        let voxels: BufferVec<Voxel> = BufferVec::new(BufferUsages::STORAGE);
-        let vertices: BufferVec<Vec3> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        let indices: BufferVec<u32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        render_app.insert_resource(Buffers { points, heights, voxels, vertices, indices });
 
         let mut render_graph = render_app.world.get_resource_mut::<RenderGraph>().unwrap();
         render_graph.add_node("voxels", DispatchVoxels);
@@ -107,12 +99,12 @@ impl render_graph::Node for DispatchVoxels {
         let simplex_pipeline = world.get_resource::<SimplexPipeline>().unwrap();
         let height_buf_vec = &buffers.heights;
         if !buffers.points.is_empty() {
-            let simplex_bind_group = &world.get_resource::<VoxelsBindingGroup>().unwrap().simplex;
+            let simplex_bind_group = &world.get_resource::<BindingGroups>().unwrap().simplex;
             let mut pass = render_context
                 .command_encoder
                 .begin_compute_pass(&ComputePassDescriptor::default());
             pass.set_pipeline(&simplex_pipeline.pipeline);
-            pass.set_bind_group(0, simplex_bind_group.as_ref().unwrap(), &[]);
+            pass.set_bind_group(0, simplex_bind_group, &[]);
             pass.dispatch(buffers.points.len() as u32, 1, 1);
 
             let height_buf = height_buf_vec.buffer().unwrap();
@@ -123,12 +115,12 @@ impl render_graph::Node for DispatchVoxels {
         }
 
         let voxels_pipeline = world.get_resource::<VoxelsPipeline>().unwrap();
-        let voxels_bind_group = &world.get_resource::<VoxelsBindingGroup>().unwrap().simplex;
+        let voxels_bind_group = &world.get_resource::<BindingGroups>().unwrap().voxels;
         let mut pass = render_context
             .command_encoder
             .begin_compute_pass(&ComputePassDescriptor::default());
         pass.set_pipeline(&voxels_pipeline.pipeline);
-        pass.set_bind_group(0, voxels_bind_group.as_ref().unwrap(), &[]);
+        pass.set_bind_group(0, voxels_bind_group, &[]);
         pass.dispatch(buffers.points.len() as u32, 1, 1);
 
         Ok(())
@@ -149,8 +141,8 @@ struct Buffers {
     indices: BufferVec<u32>,
 }
 
-struct VoxelsBindingGroup {
-    simplex: Option<BindGroup>,
+struct BindingGroups {
+    simplex: BindGroup,
     voxels: BindGroup,
 }
 
@@ -172,26 +164,23 @@ fn prepare_buffer(
 
 fn queue_bind_group(
     mut commands: Commands,
-    pipeline: Res<SimplexPipeline>,
+    simplex_pipeline: Res<SimplexPipeline>,
+    voxels_pipeline: Res<VoxelsPipeline>,
     voxels_buffer: Res<Buffers>,
     render_device: Res<RenderDevice>,
 ) {
-    let binding_groups = VoxelsBindingGroup {
-        simplex: if voxels_buffer.points.is_empty() {
-            None
-        } else {
-            Option::from(render_device.create_bind_group(&BindGroupDescriptor {
-                label: Some("simplex binding"),
-                layout: &pipeline.layout,
-                entries: &[
-                    BindGroupEntry { binding: 0, resource: voxels_buffer.points.buffer().unwrap().as_entire_binding() },
-                    BindGroupEntry { binding: 1, resource: voxels_buffer.heights.buffer().unwrap().as_entire_binding() }
-                ],
-            }))
-        },
+    let binding_groups = BindingGroups {
+        simplex: render_device.create_bind_group(&BindGroupDescriptor {
+            label: Some("simplex binding"),
+            layout: &simplex_pipeline.layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: voxels_buffer.points.buffer().unwrap().as_entire_binding() },
+                BindGroupEntry { binding: 1, resource: voxels_buffer.heights.buffer().unwrap().as_entire_binding() }
+            ],
+        }),
         voxels: render_device.create_bind_group(&BindGroupDescriptor {
             label: Some("voxels binding"),
-            layout: &pipeline.layout,
+            layout: &voxels_pipeline.layout,
             entries: &[
                 BindGroupEntry { binding: 0, resource: voxels_buffer.voxels.buffer().unwrap().as_entire_binding() },
                 BindGroupEntry { binding: 1, resource: voxels_buffer.vertices.buffer().unwrap().as_entire_binding() },
@@ -228,6 +217,18 @@ fn make_compute_bind_group_layout_entry(binding: u32, read_only: bool) -> BindGr
 impl FromWorld for SimplexPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
+
+        let mut points: BufferVec<Vec2> = BufferVec::new(BufferUsages::STORAGE);
+        points.reserve(1, render_device);
+        let mut heights: BufferVec<f32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
+        heights.reserve(1, render_device);
+        let mut voxels: BufferVec<Voxel> = BufferVec::new(BufferUsages::STORAGE);
+        voxels.reserve(CHUNK_SZ * CHUNK_SZ * CHUNK_SZ, render_device);
+        let mut vertices: BufferVec<Vec3> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
+        vertices.reserve(1, render_device);
+        let mut indices: BufferVec<u32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
+        indices.reserve(1, render_device);
+
         let shader_source = include_str!("simplex.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("simplex shader"),
@@ -252,6 +253,9 @@ impl FromWorld for SimplexPipeline {
             module: &shader,
             entry_point: "main",
         });
+
+        world.insert_resource(Buffers { points, heights, voxels, vertices, indices });
+
         SimplexPipeline {
             pipeline,
             layout,
