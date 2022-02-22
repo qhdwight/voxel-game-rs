@@ -1,4 +1,4 @@
-use std::mem::size_of;
+extern crate core;
 
 use bevy::{
     core::{cast_slice, Pod, Zeroable},
@@ -26,7 +26,7 @@ fn main() {
         .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(WindowDescriptor {
             title: String::from("QGame"),
-            // vsync: false,
+            // vsync: falsew,
             ..Default::default()
         })
         .add_plugins(DefaultPlugins)
@@ -34,7 +34,6 @@ fn main() {
         .add_plugin(LogDiagnosticsPlugin::default())
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_startup_system(setup)
-        .add_system(marching_cubes)
         .run();
 }
 
@@ -63,73 +62,6 @@ fn setup(
     // commands.spawn(Voxels { 0 = Default::default() });
 }
 
-fn marching_cubes(
-    mut query: Query<(&Handle<Mesh>)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-) {
-    // let mesh = meshes.get_mut(&pbr_bundle.mesh).unwrap();
-}
-
-struct VoxelsPlugin;
-
-impl Plugin for VoxelsPlugin {
-    fn build(&self, app: &mut App) {
-        let render_app = app.sub_app_mut(RenderApp);
-        render_app
-            .init_resource::<SimplexPipeline>()
-            .init_resource::<VoxelsPipeline>()
-            .add_system_to_stage(RenderStage::Prepare, prepare_buffer)
-            .add_system_to_stage(RenderStage::Queue, queue_bind_group);
-
-        let mut render_graph = render_app.world.get_resource_mut::<RenderGraph>().unwrap();
-        render_graph.add_node("voxels", DispatchVoxels);
-        render_graph.add_node_edge("voxels", MAIN_PASS_DEPENDENCIES).unwrap();
-    }
-}
-
-struct DispatchVoxels;
-
-impl render_graph::Node for DispatchVoxels {
-    fn run(
-        &self,
-        _graph: &mut render_graph::RenderGraphContext,
-        render_context: &mut RenderContext,
-        world: &World,
-    ) -> Result<(), render_graph::NodeRunError> {
-        let device = world.get_resource::<RenderDevice>().unwrap();
-        let buffers = world.get_resource::<Buffers>().unwrap();
-
-        let simplex_pipeline = world.get_resource::<SimplexPipeline>().unwrap();
-        let height_buf_vec = &buffers.heights;
-        if !buffers.points.is_empty() {
-            let simplex_bind_group = &world.get_resource::<BindingGroups>().unwrap().simplex;
-            let mut pass = render_context
-                .command_encoder
-                .begin_compute_pass(&ComputePassDescriptor::default());
-            pass.set_pipeline(&simplex_pipeline.pipeline);
-            pass.set_bind_group(0, simplex_bind_group, &[]);
-            pass.dispatch(buffers.points.len() as u32, 1, 1);
-
-            let height_buf = height_buf_vec.buffer().unwrap();
-            let slice = &height_buf.slice(..);
-            device.map_buffer(slice, MapMode::Read);
-            let out_vec: Vec<f32> = cast_slice(&slice.get_mapped_range()).to_vec();
-            height_buf.unmap()
-        }
-
-        let voxels_pipeline = world.get_resource::<VoxelsPipeline>().unwrap();
-        let voxels_bind_group = &world.get_resource::<BindingGroups>().unwrap().voxels;
-        let mut pass = render_context
-            .command_encoder
-            .begin_compute_pass(&ComputePassDescriptor::default());
-        pass.set_pipeline(&voxels_pipeline.pipeline);
-        pass.set_bind_group(0, voxels_bind_group, &[]);
-        pass.dispatch(buffers.points.len() as u32, 1, 1);
-
-        Ok(())
-    }
-}
-
 #[derive(Copy, Clone, Pod, Zeroable)]
 #[repr(C)]
 struct Voxel {
@@ -149,59 +81,22 @@ struct BindingGroups {
     voxels: BindGroup,
 }
 
-fn prepare_buffer(
-    mut voxels_buffer: ResMut<Buffers>,
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
-) {
-    voxels_buffer.points.clear();
-    voxels_buffer.points.reserve(CHUNK_SZ * CHUNK_SZ, render_device.as_ref());
-    for x in 0..CHUNK_SZ {
-        for y in 0..CHUNK_SZ {
-            voxels_buffer.points.push(Vec2::new(x as f32, y as f32));
-        }
-    }
-    voxels_buffer.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
-    voxels_buffer.heights.reserve(CHUNK_SZ * CHUNK_SZ, render_device.as_ref());
-}
-
-fn queue_bind_group(
-    mut commands: Commands,
-    simplex_pipeline: Res<SimplexPipeline>,
-    voxels_pipeline: Res<VoxelsPipeline>,
-    voxels_buffer: Res<Buffers>,
-    render_device: Res<RenderDevice>,
-) {
-    let binding_groups = BindingGroups {
-        simplex: render_device.create_bind_group(&BindGroupDescriptor {
-            label: Some("simplex binding"),
-            layout: &simplex_pipeline.layout,
-            entries: &[
-                BindGroupEntry { binding: 0, resource: voxels_buffer.points.buffer().unwrap().as_entire_binding() },
-                BindGroupEntry { binding: 1, resource: voxels_buffer.heights.buffer().unwrap().as_entire_binding() }
-            ],
-        }),
-        voxels: render_device.create_bind_group(&BindGroupDescriptor {
-            label: Some("voxels binding"),
-            layout: &voxels_pipeline.layout,
-            entries: &[
-                BindGroupEntry { binding: 0, resource: voxels_buffer.voxels.buffer().unwrap().as_entire_binding() },
-                BindGroupEntry { binding: 1, resource: voxels_buffer.vertices.buffer().unwrap().as_entire_binding() },
-                BindGroupEntry { binding: 2, resource: voxels_buffer.indices.buffer().unwrap().as_entire_binding() }
-            ],
-        }),
-    };
-    commands.insert_resource(binding_groups);
-}
-
-struct SimplexPipeline {
-    pipeline: ComputePipeline,
-    layout: BindGroupLayout,
-}
-
 struct VoxelsPipeline {
-    pipeline: ComputePipeline,
-    layout: BindGroupLayout,
+    simplex_pipeline: ComputePipeline,
+    simplex_layout: BindGroupLayout,
+    voxels_pipeline: ComputePipeline,
+    voxels_layout: BindGroupLayout,
+}
+
+struct VoxelsPlugin;
+
+impl Plugin for VoxelsPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .init_resource::<VoxelsPipeline>()
+            .add_system_set(SystemSet::new()
+                .with_system(marching_cubes));
+    }
 }
 
 fn make_compute_bind_group_layout_entry(binding: u32, read_only: bool) -> BindGroupLayoutEntry {
@@ -237,7 +132,7 @@ impl FromWorld for VoxelsPipeline {
             label: Some("simplex shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
         });
-        let layout =
+        let simplex_layout =
             render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("simplex bind group layout"),
                 entries: &[
@@ -247,7 +142,7 @@ impl FromWorld for VoxelsPipeline {
             });
         let pipeline_layout = render_device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("simplex pipeline layout"),
-            bind_group_layouts: &[&layout],
+            bind_group_layouts: &[&simplex_layout],
             push_constant_ranges: &[],
         });
         let simplex_pipeline = render_device.create_compute_pipeline(&ComputePipelineDescriptor {
@@ -257,24 +152,12 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        world.insert_resource(Buffers { points, heights, voxels, vertices, indices });
-
-        SimplexPipeline {
-            pipeline,
-            layout,
-        }
-    }
-}
-
-impl FromWorld for VoxelsPipeline {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.get_resource::<RenderDevice>().unwrap();
         let shader_source = include_str!("voxels.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("voxels shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
         });
-        let layout =
+        let voxels_layout =
             render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("voxels bind group layout"),
                 entries: &[
@@ -285,18 +168,89 @@ impl FromWorld for VoxelsPipeline {
             });
         let pipeline_layout = render_device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("voxels pipeline layout"),
-            bind_group_layouts: &[&layout],
+            bind_group_layouts: &[&voxels_layout],
             push_constant_ranges: &[],
         });
-        let pipeline = render_device.create_compute_pipeline(&ComputePipelineDescriptor {
+        let voxels_pipeline = render_device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some("voxels pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
             entry_point: "main",
         });
+
+        let command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("command encoder") });
+        world.insert_resource(command_encoder);
+        world.insert_resource(Buffers { points, heights, voxels, vertices, indices });
+
         VoxelsPipeline {
-            pipeline,
-            layout,
+            simplex_pipeline,
+            simplex_layout,
+            voxels_pipeline,
+            voxels_layout,
         }
     }
+}
+
+fn marching_cubes(
+    mut query: Query<(&Handle<Mesh>)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+    pipeline: Res<VoxelsPipeline>,
+    mut command_encoder: ResMut<CommandEncoder>,
+    mut buffers: ResMut<Buffers>,
+) {
+    // for (mut mesh) in query.iter_mut() {
+    //     let mesh = meshes.get(mesh).unwrap();
+    //     mesh.set_indices()
+    // }
+
+    buffers.points.clear();
+    buffers.points.reserve(CHUNK_SZ * CHUNK_SZ, render_device.as_ref());
+    for x in 0..CHUNK_SZ {
+        for y in 0..CHUNK_SZ {
+            buffers.points.push(Vec2::new(x as f32, y as f32));
+        }
+    }
+    buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
+    buffers.heights.reserve(CHUNK_SZ * CHUNK_SZ, render_device.as_ref());
+
+    let binding_groups = BindingGroups {
+        simplex: render_device.create_bind_group(&BindGroupDescriptor {
+            label: Some("simplex binding"),
+            layout: &pipeline.simplex_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: buffers.points.buffer().unwrap().as_entire_binding() },
+                BindGroupEntry { binding: 1, resource: buffers.heights.buffer().unwrap().as_entire_binding() }
+            ],
+        }),
+        voxels: render_device.create_bind_group(&BindGroupDescriptor {
+            label: Some("voxels binding"),
+            layout: &pipeline.voxels_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: buffers.voxels.buffer().unwrap().as_entire_binding() },
+                BindGroupEntry { binding: 1, resource: buffers.vertices.buffer().unwrap().as_entire_binding() },
+                BindGroupEntry { binding: 2, resource: buffers.indices.buffer().unwrap().as_entire_binding() }
+            ],
+        }),
+    };
+
+    let height_buf_vec = &buffers.heights;
+    if !buffers.points.is_empty() {
+        let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
+        pass.set_pipeline(&pipeline.simplex_pipeline);
+        pass.set_bind_group(0, &binding_groups.simplex, &[]);
+        pass.dispatch(buffers.points.len() as u32, 1, 1);
+
+        let height_buf = height_buf_vec.buffer().unwrap();
+        let slice = &height_buf.slice(..);
+        render_device.map_buffer(slice, MapMode::Read);
+        let out_vec: Vec<f32> = cast_slice(&slice.get_mapped_range()).to_vec();
+        height_buf.unmap()
+    }
+
+    let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
+    pass.set_pipeline(&pipeline.voxels_pipeline);
+    pass.set_bind_group(0, &binding_groups.voxels, &[]);
+    pass.dispatch(buffers.points.len() as u32, 1, 1);
 }
