@@ -1,4 +1,4 @@
-use std::iter::zip;
+use std::mem::size_of;
 
 use bevy::{
     core::{cast_slice, Pod, Zeroable},
@@ -17,6 +17,8 @@ use bevy::{
 };
 
 const CHUNK_SZ: usize = 32;
+const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
+const CHUNK_SZ_3: usize = CHUNK_SZ * CHUNK_SZ * CHUNK_SZ;
 
 #[derive(Component)]
 struct Voxels(Vec<Voxel>);
@@ -24,7 +26,11 @@ struct Voxels(Vec<Voxel>);
 impl Default for Voxels {
     #[inline]
     fn default() -> Voxels {
-        Voxels { 0: Vec::with_capacity(CHUNK_SZ * CHUNK_SZ * CHUNK_SZ) }
+        let mut vec = Vec::with_capacity(CHUNK_SZ_3);
+        for _ in 0..CHUNK_SZ_3 {
+            vec.push(Voxel::default());
+        }
+        Voxels { 0: vec }
     }
 }
 
@@ -55,8 +61,8 @@ fn setup(
     });
 
     commands.spawn_bundle(PerspectiveCameraBundle {
-        // transform: Transform::from_xyz(-48.0, 48.0, 48.0).looking_at(Vec3::ZERO, Vec3::Y),
-        transform: Transform::from_xyz(-6.0, 6.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
+        transform: Transform::from_xyz(-16.0, -16.0, 32.0).looking_at(Vec3::ZERO, Vec3::Z),
+        // transform: Transform::from_xyz(-6.0, 6.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
     });
 
@@ -86,7 +92,7 @@ struct Voxel {
 struct Buffers {
     points: BufferVec<Vec2>,
     heights: BufferVec<f32>,
-    voxels: BufferVec<Voxel>,
+    voxels: Buffer,
     vertices: BufferVec<Vec4>,
     normals: BufferVec<Vec4>,
     indices: BufferVec<u32>,
@@ -134,22 +140,24 @@ impl FromWorld for VoxelsPipeline {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
 
         let mut points: BufferVec<Vec2> = BufferVec::new(BufferUsages::STORAGE);
-        points.reserve(CHUNK_SZ * CHUNK_SZ, render_device);
-        points.clear();
+        points.reserve(CHUNK_SZ_2, render_device);
         for x in 0..CHUNK_SZ {
             for y in 0..CHUNK_SZ {
                 points.push(Vec2::new(x as f32, y as f32));
             }
         }
-        let CHUNK_SZ_3 = CHUNK_SZ * CHUNK_SZ * CHUNK_SZ;
         let mut heights: BufferVec<f32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        heights.reserve(CHUNK_SZ * CHUNK_SZ, render_device);
-        let mut voxels: BufferVec<Voxel> = BufferVec::new(BufferUsages::STORAGE);
-        voxels.reserve(CHUNK_SZ_3, render_device);
+        heights.reserve(CHUNK_SZ_2, render_device);
+        let voxels = render_device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let mut vertices: BufferVec<Vec4> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        vertices.reserve(CHUNK_SZ_3 * 8, render_device);
+        vertices.reserve(CHUNK_SZ_3 * 4 * 6, render_device);
         let mut normals: BufferVec<Vec4> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        normals.reserve(CHUNK_SZ_3 * 8, render_device);
+        normals.reserve(CHUNK_SZ_3 * 4 * 6, render_device);
         let mut indices: BufferVec<u32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
         indices.reserve(CHUNK_SZ_3 * 6 * 6, render_device);
         let mut atomics: BufferVec<u32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
@@ -223,27 +231,24 @@ fn read_buffer<T: Pod>(buf_vec: &BufferVec<T>, count: usize, device: &RenderDevi
     let buf = buf_vec.buffer().unwrap();
     let slice = &buf.slice(..);
     device.map_buffer(slice, MapMode::Read);
-    let count_bytes = std::mem::size_of::<T>() * count;
+    let count_bytes = size_of::<T>() * count;
     let vec = cast_slice(&slice.get_mapped_range()[..count_bytes]).to_vec();
     buf.unmap();
     vec
 }
 
 fn marching_cubes(
-    mut query: Query<(&Handle<Mesh>, &Voxels)>,
+    mut query: Query<(&Handle<Mesh>, &mut Voxels)>,
     mut meshes: ResMut<Assets<Mesh>>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     pipeline: Res<VoxelsPipeline>,
     mut buffers: ResMut<Buffers>,
 ) {
-    for (mut mesh, voxels) in query.iter_mut() {
-        buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
-        buffers.voxels.write_buffer(render_device.as_ref(), render_queue.as_ref());
+    for (mesh, mut voxels) in query.iter_mut() {
         buffers.atomics.clear();
         buffers.atomics.push(0);
         buffers.atomics.push(0);
-        buffers.atomics.write_buffer(render_device.as_ref(), render_queue.as_ref());
 
         let binding_groups = BindingGroups {
             simplex: render_device.create_bind_group(&BindGroupDescriptor {
@@ -258,7 +263,7 @@ fn marching_cubes(
                 label: Some("voxels binding"),
                 layout: &pipeline.voxels_layout,
                 entries: &[
-                    BindGroupEntry { binding: 0, resource: buffers.voxels.buffer().unwrap().as_entire_binding() },
+                    BindGroupEntry { binding: 0, resource: buffers.voxels.as_entire_binding() },
                     BindGroupEntry { binding: 1, resource: buffers.vertices.buffer().unwrap().as_entire_binding() },
                     BindGroupEntry { binding: 2, resource: buffers.normals.buffer().unwrap().as_entire_binding() },
                     BindGroupEntry { binding: 3, resource: buffers.indices.buffer().unwrap().as_entire_binding() },
@@ -274,28 +279,45 @@ fn marching_cubes(
                 let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
                 pass.set_pipeline(&pipeline.simplex_pipeline);
                 pass.set_bind_group(0, &binding_groups.simplex, &[]);
-                pass.dispatch(buffers.points.len() as u32, 1, 1);
+                pass.dispatch((buffers.points.len() / 16) as u32, (buffers.points.len() / 16) as u32, 1);
             }
             render_queue.submit(vec![command_encoder.finish()]);
-            heights = Some(read_buffer(&buffers.heights, buffers.heights.len(), render_device.as_ref()));
+
+            heights = Some(read_buffer(&buffers.heights, buffers.points.len(), render_device.as_ref()));
+            if let Some(heights) = heights {
+                for y in 0..CHUNK_SZ {
+                    for x in 0..CHUNK_SZ {
+                        // for z in 0..CHUNK_SZ {
+                        //     let height = ((heights[x + y * CHUNK_SZ] + 1.0) * 4.0) as usize;
+                        //     voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
+                        //         density: if z == height { 1.0 } else { 0.0 }
+                        //     };
+                        // }
+                        voxels.0[x + y * CHUNK_SZ] = Voxel {
+                            density: 1.0
+                        };
+                        // let height = ((heights[x + y * CHUNK_SZ] + 1.0) * 4.0) as usize;
+                        // voxels.0[x + y * CHUNK_SZ_2 + height * CHUNK_SZ] = Voxel {
+                        //     density: 1.0
+                        // };
+                    }
+                }
+            }
+            // buffers.points.clear();
         }
-        if let Some(heights) = heights {
-            buffers.voxels.clear();
-            buffers.voxels.push(Voxel { density: 1.0 });
-            buffers.voxels.push(Voxel { density: 1.0 });
-            // for x in 0..CHUNK_SZ {
-            //     for y in 0..CHUNK_SZ {
-            //         buffers.voxels.push(Voxel { density: 1.0 });
-            //     }
-            // }
-        }
+
+        buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
+        let range = 0..size_of::<Voxel>() * voxels.0.len();
+        let bytes: &[u8] = cast_slice(&voxels.0);
+        render_queue.write_buffer(&buffers.voxels, 0, &bytes[range]);
+        buffers.atomics.write_buffer(render_device.as_ref(), render_queue.as_ref());
 
         let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("voxel command encoder") });
         {
             let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline.voxels_pipeline);
             pass.set_bind_group(0, &binding_groups.voxels, &[]);
-            pass.dispatch(CHUNK_SZ as u32, CHUNK_SZ as u32, CHUNK_SZ as u32);
+            pass.dispatch((CHUNK_SZ / 8) as u32, (CHUNK_SZ / 8) as u32, (CHUNK_SZ / 8) as u32);
         }
         render_queue.submit(vec![command_encoder.finish()]);
 
