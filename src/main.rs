@@ -279,27 +279,20 @@ fn marching_cubes(
                 let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
                 pass.set_pipeline(&pipeline.simplex_pipeline);
                 pass.set_bind_group(0, &binding_groups.simplex, &[]);
-                pass.dispatch((buffers.points.len() / 16) as u32, (buffers.points.len() / 16) as u32, 1);
+                pass.dispatch((CHUNK_SZ / 32) as u32, (CHUNK_SZ / 32) as u32, 1);
             }
             render_queue.submit(vec![command_encoder.finish()]);
 
             heights = Some(read_buffer(&buffers.heights, buffers.points.len(), render_device.as_ref()));
             if let Some(heights) = heights {
-                for y in 0..CHUNK_SZ {
-                    for x in 0..CHUNK_SZ {
-                        // for z in 0..CHUNK_SZ {
-                        //     let height = ((heights[x + y * CHUNK_SZ] + 1.0) * 4.0) as usize;
-                        //     voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
-                        //         density: if z == height { 1.0 } else { 0.0 }
-                        //     };
-                        // }
-                        voxels.0[x + y * CHUNK_SZ] = Voxel {
-                            density: 1.0
-                        };
-                        // let height = ((heights[x + y * CHUNK_SZ] + 1.0) * 4.0) as usize;
-                        // voxels.0[x + y * CHUNK_SZ_2 + height * CHUNK_SZ] = Voxel {
-                        //     density: 1.0
-                        // };
+                for z in 0..CHUNK_SZ {
+                    for y in 0..CHUNK_SZ {
+                        for x in 0..CHUNK_SZ {
+                            let height = ((heights[x + y * CHUNK_SZ] + 1.0) * 4.0) as usize;
+                            voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
+                                density: if z == height { 1.0 } else { 0.0 }
+                            };
+                        }
                     }
                 }
             }
