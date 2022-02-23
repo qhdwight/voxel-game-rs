@@ -79,10 +79,6 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
     if (voxel.density > 0.0) {
         var dir: u32 = 0u;
         loop {
-            if (dir == 6u) {
-                break;
-            }
-
             var adj_pos = vec3<i32>(invocation_id) + adj_offsets[dir];
             var flat_idx = u32(adj_pos.x * 32 * 32 + adj_pos.y * 32 + adj_pos.z);
             var adj_density = in_voxels.data[flat_idx].density;
@@ -103,6 +99,11 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
                 out_indices.data[start_indices_idx + 4u] = start_vert_idx + 2u;
                 out_indices.data[start_indices_idx + 5u] = start_vert_idx + 3u;
                 atomicAdd(&out_vertices.counter, 6u);
+            }
+
+            dir = dir + 1u;
+            if (dir >= 6u) {
+                break;
             }
         }
     }

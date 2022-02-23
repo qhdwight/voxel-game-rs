@@ -127,6 +127,7 @@ impl FromWorld for VoxelsPipeline {
         heights.reserve(CHUNK_SZ * CHUNK_SZ, render_device);
         let mut voxels: BufferVec<Voxel> = BufferVec::new(BufferUsages::STORAGE);
         voxels.reserve(CHUNK_SZ * CHUNK_SZ * CHUNK_SZ, render_device);
+        voxels.push(Voxel { density: 1.0 });
         let mut vertices: BufferVec<Vec3> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
         vertices.reserve(128, render_device);
         let mut indices: BufferVec<u32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
@@ -207,6 +208,9 @@ fn marching_cubes(
     //     mesh.set_indices()
     // }
 
+    buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
+    buffers.voxels.write_buffer(render_device.as_ref(), render_queue.as_ref());
+
     let binding_groups = BindingGroups {
         simplex: render_device.create_bind_group(&BindGroupDescriptor {
             label: Some("simplex binding"),
@@ -221,22 +225,8 @@ fn marching_cubes(
             layout: &pipeline.voxels_layout,
             entries: &[
                 BindGroupEntry { binding: 0, resource: buffers.voxels.buffer().unwrap().as_entire_binding() },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &buffers.vertices.buffer().unwrap(),
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: &buffers.indices.buffer().unwrap(),
-                        offset: 0,
-                        size: None,
-                    }),
-                }
+                BindGroupEntry { binding: 1, resource: buffers.vertices.buffer().unwrap().as_entire_binding() },
+                BindGroupEntry { binding: 2, resource: buffers.indices.buffer().unwrap().as_entire_binding() },
             ],
         }),
     };
@@ -265,7 +255,7 @@ fn marching_cubes(
         let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
         pass.set_pipeline(&pipeline.voxels_pipeline);
         pass.set_bind_group(0, &binding_groups.voxels, &[]);
-        pass.dispatch(32, 32, 32);
+        pass.dispatch(CHUNK_SZ as u32, CHUNK_SZ as u32, CHUNK_SZ as u32);
     }
     let commands = command_encoder.finish();
     render_queue.submit(vec![commands]);
