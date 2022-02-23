@@ -10,6 +10,10 @@ struct VertexBuffer {
     data: array<vec3<f32>>;
 };
 
+struct NormalBuffer {
+    data: array<vec3<f32>>;
+};
+
 struct IndexBuffer {
     data: array<u32>;
 };
@@ -26,9 +30,12 @@ var<storage, read> in_voxels: VoxelBuffer;
 var<storage, read_write> out_vertices: VertexBuffer;
 
 [[group(0), binding(2)]]
-var<storage, read_write> out_indices: IndexBuffer;
+var<storage, read_write> out_normals: NormalBuffer;
 
 [[group(0), binding(3)]]
+var<storage, read_write> out_indices: IndexBuffer;
+
+[[group(0), binding(4)]]
 var<storage, read_write> global_atomics: Atomics;
 
 [[stage(compute), workgroup_size(8, 8, 8)]]
@@ -86,25 +93,35 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
         var dir: u32 = 0u;
         loop {
             var adj_pos = vec3<i32>(invocation_id) + adj_offsets[dir];
-            var flat_idx = u32(adj_pos.x * 32 * 32 + adj_pos.y * 32 + adj_pos.z);
-            var adj_density = in_voxels.data[flat_idx].density;
+            var flat_idx_signed = adj_pos.x * 32 * 32 + adj_pos.y * 32 + adj_pos.z;
+            var flat_idx = u32(flat_idx_signed);
+            var adj_density = 0.0;
+            if (flat_idx_signed >= 0 && flat_idx_signed < 32 * 32 * 32) {
+                adj_density = in_voxels.data[flat_idx].density;
+            }
             if (adj_density < 0.5) {
                 var pos = vec3<f32>(invocation_id);
-                var start_vert_idx = atomicLoad(&global_atomics.vertices_head);
-                out_vertices.data[start_vert_idx] = pos + faces[dir][0u];
+
+                var start_vert_idx = atomicAdd(&global_atomics.vertices_head, 4u);
+                var start_indices_idx = atomicAdd(&global_atomics.indices_head, 6u);
+
+                out_vertices.data[start_vert_idx + 0u] = pos + faces[dir][0u];
                 out_vertices.data[start_vert_idx + 1u] = pos + faces[dir][1u];
                 out_vertices.data[start_vert_idx + 2u] = pos + faces[dir][2u];
                 out_vertices.data[start_vert_idx + 3u] = pos + faces[dir][3u];
-                atomicAdd(&global_atomics.vertices_head, 4u);
 
-                var start_indices_idx = atomicLoad(&global_atomics.indices_head);
-                out_indices.data[start_indices_idx] = start_vert_idx;
+                var normal = cross(faces[dir][0u] - faces[dir][1u], faces[dir][0u] - faces[dir][2u]);
+                out_normals.data[start_vert_idx + 0u] = normal;
+                out_normals.data[start_vert_idx + 1u] = normal;
+                out_normals.data[start_vert_idx + 2u] = normal;
+                out_normals.data[start_vert_idx + 3u] = normal;
+
+                out_indices.data[start_indices_idx + 0u] = start_vert_idx + 0u;
                 out_indices.data[start_indices_idx + 1u] = start_vert_idx + 1u;
                 out_indices.data[start_indices_idx + 2u] = start_vert_idx + 2u;
-                out_indices.data[start_indices_idx + 3u] = start_vert_idx;
+                out_indices.data[start_indices_idx + 3u] = start_vert_idx + 0u;
                 out_indices.data[start_indices_idx + 4u] = start_vert_idx + 2u;
                 out_indices.data[start_indices_idx + 5u] = start_vert_idx + 3u;
-                atomicAdd(&global_atomics.indices_head, 6u);
             }
 
             dir = dir + 1u;
