@@ -88,12 +88,12 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
         vec3<i32>(0, 0, -1),
     );
 
-    let voxel = in_voxels.data[invocation_id.x * 32u * 32u + invocation_id.y * 32u + invocation_id.z];
+    let voxel = in_voxels.data[invocation_id.x + invocation_id.y * 32u + invocation_id.z * 32u * 32u];
     if (voxel.density > 0.5) {
         var dir: u32 = 0u;
         loop {
             var adj_pos = vec3<i32>(invocation_id) + adj_offsets[dir];
-            var flat_idx_signed = adj_pos.x * 32 * 32 + adj_pos.y * 32 + adj_pos.z;
+            var flat_idx_signed = adj_pos.x + adj_pos.y * 32 + adj_pos.z * 32 * 32;
             var flat_idx = u32(flat_idx_signed);
             var adj_density = 0.0;
             if (flat_idx_signed >= 0 && flat_idx_signed < 32 * 32 * 32) {
