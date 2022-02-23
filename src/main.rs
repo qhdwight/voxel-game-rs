@@ -61,7 +61,7 @@ fn setup(
     });
 
     commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: Transform::from_xyz(-16.0, -16.0, 32.0).looking_at(Vec3::ZERO, Vec3::Z),
+        transform: Transform::from_xyz(-32.0, -32.0, 24.0).looking_at(Vec3::ZERO, Vec3::Z),
         // transform: Transform::from_xyz(-6.0, 6.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
     });
