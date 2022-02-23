@@ -116,15 +116,21 @@ impl FromWorld for VoxelsPipeline {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
 
         let mut points: BufferVec<Vec2> = BufferVec::new(BufferUsages::STORAGE);
-        points.reserve(1, render_device);
+        points.reserve(CHUNK_SZ * CHUNK_SZ, render_device);
+        points.clear();
+        for x in 0..CHUNK_SZ {
+            for y in 0..CHUNK_SZ {
+                points.push(Vec2::new(x as f32, y as f32));
+            }
+        }
         let mut heights: BufferVec<f32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        heights.reserve(1, render_device);
+        heights.reserve(CHUNK_SZ * CHUNK_SZ, render_device);
         let mut voxels: BufferVec<Voxel> = BufferVec::new(BufferUsages::STORAGE);
         voxels.reserve(CHUNK_SZ * CHUNK_SZ * CHUNK_SZ, render_device);
         let mut vertices: BufferVec<Vec3> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        vertices.reserve(1, render_device);
+        vertices.reserve(128, render_device);
         let mut indices: BufferVec<u32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        indices.reserve(1, render_device);
+        indices.reserve(128, render_device);
 
         let shader_source = include_str!("simplex.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
@@ -201,16 +207,6 @@ fn marching_cubes(
     //     mesh.set_indices()
     // }
 
-    buffers.points.clear();
-    buffers.points.reserve(CHUNK_SZ * CHUNK_SZ, render_device.as_ref());
-    for x in 0..CHUNK_SZ {
-        for y in 0..CHUNK_SZ {
-            buffers.points.push(Vec2::new(x as f32, y as f32));
-        }
-    }
-    buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
-    buffers.heights.reserve(CHUNK_SZ * CHUNK_SZ, render_device.as_ref());
-
     let binding_groups = BindingGroups {
         simplex: render_device.create_bind_group(&BindGroupDescriptor {
             label: Some("simplex binding"),
@@ -225,15 +221,29 @@ fn marching_cubes(
             layout: &pipeline.voxels_layout,
             entries: &[
                 BindGroupEntry { binding: 0, resource: buffers.voxels.buffer().unwrap().as_entire_binding() },
-                BindGroupEntry { binding: 1, resource: buffers.vertices.buffer().unwrap().as_entire_binding() },
-                BindGroupEntry { binding: 2, resource: buffers.indices.buffer().unwrap().as_entire_binding() }
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &buffers.vertices.buffer().unwrap(),
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &buffers.indices.buffer().unwrap(),
+                        offset: 0,
+                        size: None,
+                    }),
+                }
             ],
         }),
     };
 
     let height_buf_vec = &buffers.heights;
     if !buffers.points.is_empty() {
-        let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("command encoder") });
+        let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("simplex command encoder") });
         {
             let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline.simplex_pipeline);
@@ -250,12 +260,12 @@ fn marching_cubes(
         render_queue.submit(vec![commands]);
     }
 
-    let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("command encoder") });
+    let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("voxel command encoder") });
     {
         let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
         pass.set_pipeline(&pipeline.voxels_pipeline);
         pass.set_bind_group(0, &binding_groups.voxels, &[]);
-        pass.dispatch(buffers.points.len() as u32, 1, 1);
+        pass.dispatch(32, 32, 32);
     }
     let commands = command_encoder.finish();
     render_queue.submit(vec![commands]);
