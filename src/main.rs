@@ -56,23 +56,33 @@ fn setup(
 ) {
     let mesh = meshes.add(Mesh::new(PrimitiveTopology::TriangleList));
     let material = materials.add(StandardMaterial {
-        base_color: Color::DARK_GREEN,
+        base_color: Color::RED,
         ..Default::default()
     });
 
     commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: Transform::from_xyz(-32.0, -32.0, 24.0).looking_at(Vec3::ZERO, Vec3::Z),
+        transform: Transform::from_xyz(-16.0, -16.0, 32.0).looking_at(Vec3::new(16.0, 16.0, 0.0), Vec3::Z),
         // transform: Transform::from_xyz(-6.0, 6.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
     });
 
     commands.spawn_bundle(PointLightBundle {
         point_light: PointLight {
-            intensity: 1500.0,
+            intensity: 2000.0,
             shadows_enabled: true,
             ..Default::default()
         },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
+        transform: Transform::from_xyz(38.0, -34.0, 40.0),
+        ..Default::default()
+    });
+
+    commands.spawn_bundle(DirectionalLightBundle {
+        directional_light: DirectionalLight {
+            illuminance: 2000.0,
+            shadows_enabled: true,
+            ..Default::default()
+        },
+        transform: Transform::from_xyz(-38.0, 34.0, 40.0),
         ..Default::default()
     });
 
@@ -141,11 +151,6 @@ impl FromWorld for VoxelsPipeline {
 
         let mut points: BufferVec<Vec2> = BufferVec::new(BufferUsages::STORAGE);
         points.reserve(CHUNK_SZ_2, render_device);
-        for x in 0..CHUNK_SZ {
-            for y in 0..CHUNK_SZ {
-                points.push(Vec2::new(x as f32, y as f32));
-            }
-        }
         let mut heights: BufferVec<f32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
         heights.reserve(CHUNK_SZ_2, render_device);
         let voxels = render_device.create_buffer(&wgpu::BufferDescriptor {
@@ -240,15 +245,27 @@ fn read_buffer<T: Pod>(buf_vec: &BufferVec<T>, count: usize, device: &RenderDevi
 fn marching_cubes(
     mut query: Query<(&Handle<Mesh>, &mut Voxels)>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut buffers: ResMut<Buffers>,
+    time: Res<Time>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     pipeline: Res<VoxelsPipeline>,
-    mut buffers: ResMut<Buffers>,
 ) {
+    // use std::time::Instant;
+    // let now = Instant::now();
+
     for (mesh, mut voxels) in query.iter_mut() {
         buffers.atomics.clear();
         buffers.atomics.push(0);
         buffers.atomics.push(0);
+
+        let time = time.time_since_startup().as_secs_f32();
+        buffers.points.clear();
+        for x in 0..CHUNK_SZ {
+            for y in 0..CHUNK_SZ {
+                buffers.points.push(Vec2::new(x as f32 + time, y as f32 + time));
+            }
+        }
 
         let binding_groups = BindingGroups {
             simplex: render_device.create_bind_group(&BindGroupDescriptor {
@@ -336,4 +353,7 @@ fn marching_cubes(
         mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     }
+
+    // let elapsed = now.elapsed();
+    // println!("Elapsed: {:.2?}", elapsed);
 }
