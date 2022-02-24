@@ -16,6 +16,8 @@ use bevy::{
     window::WindowDescriptor,
 };
 
+use qgame::BufferVec;
+
 const CHUNK_SZ: usize = 32;
 const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
 const CHUNK_SZ_3: usize = CHUNK_SZ * CHUNK_SZ * CHUNK_SZ;
@@ -27,9 +29,7 @@ impl Default for Voxels {
     #[inline]
     fn default() -> Voxels {
         let mut vec = Vec::with_capacity(CHUNK_SZ_3);
-        for _ in 0..CHUNK_SZ_3 {
-            vec.push(Voxel::default());
-        }
+        vec.resize(CHUNK_SZ_3, Voxel::default());
         Voxels { 0: vec }
     }
 }
@@ -54,7 +54,12 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let mesh = meshes.add(Mesh::new(PrimitiveTopology::TriangleList));
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    mesh.set_indices(Some(Indices::U32(Vec::new())));
+    mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(Vec::new()));
+    mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, VertexAttributeValues::Float32x3(Vec::new()));
+    mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, VertexAttributeValues::Float32x2(Vec::new()));
+    let mesh = meshes.add(mesh);
     let material = materials.add(StandardMaterial {
         base_color: Color::RED,
         ..Default::default()
@@ -232,16 +237,6 @@ impl FromWorld for VoxelsPipeline {
     }
 }
 
-fn read_buffer<T: Pod>(buf_vec: &BufferVec<T>, count: usize, device: &RenderDevice) -> Vec<T> {
-    let buf = buf_vec.buffer().unwrap();
-    let slice = &buf.slice(..);
-    device.map_buffer(slice, MapMode::Read);
-    let count_bytes = size_of::<T>() * count;
-    let vec = cast_slice(&slice.get_mapped_range()[..count_bytes]).to_vec();
-    buf.unmap();
-    vec
-}
-
 fn marching_cubes(
     mut query: Query<(&Handle<Mesh>, &mut Voxels)>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -289,7 +284,6 @@ fn marching_cubes(
             }),
         };
 
-        let mut heights: Option<Vec<f32>> = None;
         if !buffers.points.is_empty() {
             let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("simplex command encoder") });
             {
@@ -300,16 +294,14 @@ fn marching_cubes(
             }
             render_queue.submit(vec![command_encoder.finish()]);
 
-            heights = Some(read_buffer(&buffers.heights, buffers.points.len(), render_device.as_ref()));
-            if let Some(heights) = heights {
-                for z in 0..CHUNK_SZ {
-                    for y in 0..CHUNK_SZ {
-                        for x in 0..CHUNK_SZ {
-                            let height = ((heights[x + y * CHUNK_SZ] + 1.0) * 4.0) as usize;
-                            voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
-                                density: if z == height { 1.0 } else { 0.0 }
-                            };
-                        }
+            buffers.heights.read_buffer(CHUNK_SZ_2, render_device.as_ref());
+            for z in 0..CHUNK_SZ {
+                for y in 0..CHUNK_SZ {
+                    for x in 0..CHUNK_SZ {
+                        let height = ((buffers.heights.as_slice()[x + y * CHUNK_SZ] + 1.0) * 4.0) as usize;
+                        voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
+                            density: if z == height { 1.0 } else { 0.0 }
+                        };
                     }
                 }
             }
@@ -331,27 +323,43 @@ fn marching_cubes(
         }
         render_queue.submit(vec![command_encoder.finish()]);
 
-        let atomics = read_buffer(&buffers.atomics, 2, render_device.as_ref());
-        let vertices = read_buffer(&buffers.vertices, atomics[0] as usize, render_device.as_ref());
-        let normals = read_buffer(&buffers.normals, atomics[0] as usize, render_device.as_ref());
-        let indices = read_buffer(&buffers.indices, atomics[1] as usize, render_device.as_ref());
+        buffers.atomics.read_buffer(2, render_device.as_ref());
+        let vertex_count = buffers.atomics.as_slice()[0] as usize;
+        let index_count = buffers.atomics.as_slice()[1] as usize;
+        buffers.vertices.read_buffer(vertex_count, render_device.as_ref());
+        buffers.normals.read_buffer(vertex_count, render_device.as_ref());
+        buffers.indices.read_buffer(index_count, render_device.as_ref());
 
-        let vertices: Vec<[f32; 3]> = vertices.iter().map(|v| [v[0], v[1], v[2]]).collect();
-        let normals: Vec<[f32; 3]> = normals.iter().map(|n| [n[0], n[1], n[2]]).collect();
+        let mesh = meshes.get_mut(mesh).unwrap();
 
-        let mut uvs = Vec::<[f32; 2]>::with_capacity(vertices.len());
-        for _ in 0..vertices.len() / 4 {
-            uvs.push([0.0, 0.0]);
-            uvs.push([1.0, 0.0]);
-            uvs.push([1.0, 1.0]);
-            uvs.push([0.0, 1.0]);
+        if let Some(Indices::U32(indices)) = mesh.indices_mut() {
+            indices.resize(index_count, 0);
+            indices.copy_from_slice(buffers.indices.as_slice());
         }
-
-        let mut mesh = meshes.get_mut(mesh).unwrap();
-        mesh.set_indices(Some(Indices::U32(indices)));
-        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-        mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-        mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        if let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
+            vertices.clear();
+            vertices.reserve(vertex_count);
+            for v in buffers.vertices.iter() {
+                vertices.push([v[0], v[1], v[2]]);
+            }
+        }
+        if let Some(VertexAttributeValues::Float32x3(normals)) = mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL) {
+            normals.clear();
+            normals.reserve(vertex_count);
+            for v in buffers.normals.iter() {
+                normals.push([v[0], v[1], v[2]]);
+            }
+        }
+        if let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) {
+            uvs.clear();
+            uvs.reserve(vertex_count);
+            for _ in 0..vertex_count / 4 {
+                uvs.push([0.0, 0.0]);
+                uvs.push([1.0, 0.0]);
+                uvs.push([1.0, 1.0]);
+                uvs.push([0.0, 1.0]);
+            }
+        }
     }
 
     // let elapsed = now.elapsed();
