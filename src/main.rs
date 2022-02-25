@@ -15,6 +15,7 @@ use bevy::{
     },
     window::WindowDescriptor,
 };
+use enumflags2::{bitflags, BitFlags};
 
 use qgame::BufferVec;
 
@@ -98,9 +99,35 @@ fn setup(
     });
 }
 
-#[derive(Copy, Clone, Pod, Zeroable, Default)]
+#[bitflags]
+#[repr(u32)]
+#[derive(Copy, Clone, PartialEq)]
+enum VoxelProps {
+    IsBlock,
+}
+
+struct VoxelFlags(BitFlags<VoxelProps>);
+
+impl Default for VoxelFlags {
+    #[inline]
+    fn default() -> VoxelFlags { VoxelFlags::zeroed() }
+}
+
+unsafe impl Zeroable for VoxelFlags {
+    #[inline]
+    fn zeroed() -> Self { unsafe { std::mem::zeroed() } }
+}
+
+impl Copy for VoxelFlags {}
+
+impl Clone for VoxelFlags { fn clone(&self) -> Self { *self } }
+
+unsafe impl Pod for VoxelFlags {}
+
+#[derive(Copy, Clone, Default, Pod, Zeroable)]
 #[repr(C)]
 struct Voxel {
+    flags: u32,
     density: f32,
 }
 
@@ -173,7 +200,7 @@ impl FromWorld for VoxelsPipeline {
         let mut atomics: BufferVec<u32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
         atomics.reserve(2, render_device);
 
-        let shader_source = include_str!("simplex.wgsl");
+        let shader_source = include_str!("../assets/simplex.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("simplex shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
@@ -198,7 +225,7 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        let shader_source = include_str!("voxels.wgsl");
+        let shader_source = include_str!("../assets/voxels.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("voxels shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
@@ -298,9 +325,21 @@ fn marching_cubes(
             for z in 0..CHUNK_SZ {
                 for y in 0..CHUNK_SZ {
                     for x in 0..CHUNK_SZ {
-                        let height = ((buffers.heights.as_slice()[x + y * CHUNK_SZ] + 1.0) * 4.0) as usize;
+                        let noise01 = (buffers.heights.as_slice()[x + y * CHUNK_SZ] + 1.0) * 0.5;
+                        let height = noise01 * 4.0 + 8.0 - (z as f32);
+                        let mut density= 0.0;
+                        if height > 1.0 {
+                            density = 1.0;
+                        } else if height > 0.0 {
+                            density = height;
+                        }
+                        // voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
+                        //     flags: if z == (noise01 * 4.0) as usize { 1 } else { 0},
+                        //     density: 0.0
+                        // };
                         voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
-                            density: if z == height { 1.0 } else { 0.0 }
+                            flags: 0,
+                            density
                         };
                     }
                 }
@@ -353,10 +392,15 @@ fn marching_cubes(
         if let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) {
             uvs.clear();
             uvs.reserve(vertex_count);
-            for _ in 0..vertex_count / 4 {
+            // for _ in 0..vertex_count / 4 {
+            //     uvs.push([0.0, 0.0]);
+            //     uvs.push([1.0, 0.0]);
+            //     uvs.push([1.0, 1.0]);
+            //     uvs.push([0.0, 1.0]);
+            // }
+            for _ in 0..vertex_count / 3 {
                 uvs.push([0.0, 0.0]);
                 uvs.push([1.0, 0.0]);
-                uvs.push([1.0, 1.0]);
                 uvs.push([0.0, 1.0]);
             }
         }
