@@ -189,7 +189,7 @@ pub fn marching_cubes(
         buffers.points.clear();
         for x in 0..CHUNK_SZ {
             for y in 0..CHUNK_SZ {
-                buffers.points.push(0.1 * Vec2::new(x as f32 + time, y as f32 + time));
+                buffers.points.push(0.05 * Vec2::new(x as f32 + time, y as f32 + time));
             }
         }
 

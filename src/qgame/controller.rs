@@ -1,3 +1,5 @@
+use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI, FRAC_PI_3, FRAC_PI_6};
+
 use bevy::{
     input::mouse::MouseMotion,
     prelude::*,
@@ -37,8 +39,8 @@ impl Default for CameraController {
             walk_speed: 10.0,
             run_speed: 30.0,
             friction: 0.5,
-            pitch: 0.0,
-            yaw: 0.0,
+            pitch: FRAC_PI_4,
+            yaw: -FRAC_PI_6,
             velocity: Vec3::ZERO,
         }
     }
@@ -105,18 +107,16 @@ pub fn camera_controller(
             + options.velocity.z * dt * Vec3::Z
             + options.velocity.y * dt * forward;
 
-        if mouse_delta != Vec2::ZERO {
-            // Apply look update
-            let (pitch, yaw) = (
-                (options.pitch - mouse_delta.y * 0.5 * options.sensitivity * dt).clamp(
-                    -0.99 * std::f32::consts::FRAC_PI_2,
-                    0.99 * std::f32::consts::FRAC_PI_2,
-                ),
-                options.yaw - mouse_delta.x * options.sensitivity * dt,
-            );
-            transform.rotation = Quat::from_euler(EulerRot::YZX, 0.0, yaw, pitch);
-            options.pitch = pitch;
-            options.yaw = yaw;
-        }
+        // Apply look update
+        let (pitch, yaw) = (
+            (options.pitch - mouse_delta.y * 0.5 * options.sensitivity * dt).clamp(
+                0.001,
+                PI - 0.001,
+            ),
+            options.yaw - mouse_delta.x * options.sensitivity * dt,
+        );
+        transform.rotation = Quat::from_euler(EulerRot::YZX, 0.0, yaw, pitch);
+        options.pitch = pitch;
+        options.yaw = yaw;
     }
 }
