@@ -8,10 +8,9 @@ use bevy::{
     window::WindowDescriptor,
 };
 
-mod qgame;
-
 use qgame::*;
-use qgame::voxel::*;
+
+mod qgame;
 
 fn main() {
     App::new()
@@ -25,6 +24,7 @@ fn main() {
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_startup_system(setup)
         .add_system(update_text)
+        .add_system(camera_controller)
         .run();
 }
 
@@ -52,7 +52,7 @@ fn setup(
         transform: Transform::from_xyz(-16.0, -16.0, 32.0).looking_at(Vec3::new(16.0, 16.0, 0.0), Vec3::Z),
         // transform: Transform::from_xyz(-6.0, 6.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
-    });
+    }).insert(CameraController::default());
 
     commands.spawn_bundle(PointLightBundle {
         point_light: PointLight {

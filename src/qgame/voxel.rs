@@ -10,7 +10,7 @@ use bevy::{
     },
 };
 
-use crate::{*, lookup::*};
+use crate::*;
 
 // use enumflags2::{bitflags, BitFlags};
 
