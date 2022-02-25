@@ -15,8 +15,9 @@ use bevy::{
     },
     window::WindowDescriptor,
 };
+use enumflags2::{bitflags, BitFlags};
 
-use qgame::BufferVec;
+use qgame::{BufferVec, EDGE_TABLE, TRI_TABLE};
 
 const CHUNK_SZ: usize = 32;
 const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
@@ -98,18 +99,47 @@ fn setup(
     });
 }
 
-#[derive(Copy, Clone, Pod, Zeroable, Default)]
+#[bitflags]
+#[repr(u32)]
+#[derive(Copy, Clone, PartialEq)]
+enum VoxelProps {
+    IsBlock,
+}
+
+struct VoxelFlags(BitFlags<VoxelProps>);
+
+impl Default for VoxelFlags {
+    #[inline]
+    fn default() -> VoxelFlags { VoxelFlags::zeroed() }
+}
+
+unsafe impl Zeroable for VoxelFlags {
+    #[inline]
+    fn zeroed() -> Self { unsafe { std::mem::zeroed() } }
+}
+
+impl Copy for VoxelFlags {}
+
+impl Clone for VoxelFlags { fn clone(&self) -> Self { *self } }
+
+unsafe impl Pod for VoxelFlags {}
+
+#[derive(Copy, Clone, Default, Pod, Zeroable)]
 #[repr(C)]
 struct Voxel {
+    flags: u32,
     density: f32,
 }
 
 struct Buffers {
+    edge_table: Buffer,
+    tri_table: Buffer,
     points: BufferVec<Vec2>,
     heights: BufferVec<f32>,
     voxels: Buffer,
     vertices: BufferVec<Vec4>,
     normals: BufferVec<Vec4>,
+    uvs: BufferVec<Vec2>,
     indices: BufferVec<u32>,
     atomics: BufferVec<u32>,
 }
@@ -137,7 +167,20 @@ impl Plugin for VoxelsPlugin {
     }
 }
 
-fn make_compute_bind_group_layout_entry(binding: u32, read_only: bool) -> BindGroupLayoutEntry {
+fn make_compute_uniform_bind_group_layout_entry(binding: u32) -> BindGroupLayoutEntry {
+    BindGroupLayoutEntry {
+        binding,
+        visibility: ShaderStages::COMPUTE,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+fn make_compute_storage_bind_group_layout_entry(binding: u32, read_only: bool) -> BindGroupLayoutEntry {
     BindGroupLayoutEntry {
         binding,
         visibility: ShaderStages::COMPUTE,
@@ -154,26 +197,23 @@ impl FromWorld for VoxelsPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
 
-        let mut points: BufferVec<Vec2> = BufferVec::new(BufferUsages::STORAGE);
-        points.reserve(CHUNK_SZ_2, render_device);
-        let mut heights: BufferVec<f32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        heights.reserve(CHUNK_SZ_2, render_device);
+        let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("edge table"), contents: cast_slice(EDGE_TABLE), usage: BufferUsages::UNIFORM });
+        let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("tri table"), contents: cast_slice(TRI_TABLE), usage: BufferUsages::UNIFORM });
+        let points: BufferVec<Vec2> = BufferVec::with_capacity(BufferUsages::STORAGE, CHUNK_SZ_2, render_device);
+        let heights: BufferVec<f32> = BufferVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_2, render_device);
         let voxels = render_device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let mut vertices: BufferVec<Vec4> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        vertices.reserve(CHUNK_SZ_3 * 4 * 6, render_device);
-        let mut normals: BufferVec<Vec4> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        normals.reserve(CHUNK_SZ_3 * 4 * 6, render_device);
-        let mut indices: BufferVec<u32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        indices.reserve(CHUNK_SZ_3 * 6 * 6, render_device);
-        let mut atomics: BufferVec<u32> = BufferVec::new(BufferUsages::STORAGE | BufferUsages::MAP_READ);
-        atomics.reserve(2, render_device);
+        let vertices: BufferVec<Vec4> = BufferVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 4 * 6, render_device);
+        let uvs: BufferVec<Vec2> = BufferVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 4 * 6, render_device);
+        let normals: BufferVec<Vec4> = BufferVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 4 * 6, render_device);
+        let indices: BufferVec<u32> = BufferVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 6 * 6, render_device);
+        let atomics: BufferVec<u32> = BufferVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, 2, render_device);
 
-        let shader_source = include_str!("simplex.wgsl");
+        let shader_source = include_str!("../assets/simplex.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("simplex shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
@@ -182,8 +222,8 @@ impl FromWorld for VoxelsPipeline {
             render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("simplex bind group layout"),
                 entries: &[
-                    make_compute_bind_group_layout_entry(0, true),
-                    make_compute_bind_group_layout_entry(1, false),
+                    make_compute_storage_bind_group_layout_entry(0, true),
+                    make_compute_storage_bind_group_layout_entry(1, false),
                 ],
             });
         let pipeline_layout = render_device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -198,7 +238,7 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        let shader_source = include_str!("voxels.wgsl");
+        let shader_source = include_str!("../assets/voxels.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("voxels shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
@@ -207,11 +247,14 @@ impl FromWorld for VoxelsPipeline {
             render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("voxels bind group layout"),
                 entries: &[
-                    make_compute_bind_group_layout_entry(0, true),
-                    make_compute_bind_group_layout_entry(1, false),
-                    make_compute_bind_group_layout_entry(2, false),
-                    make_compute_bind_group_layout_entry(3, false),
-                    make_compute_bind_group_layout_entry(4, false),
+                    make_compute_uniform_bind_group_layout_entry(0),
+                    make_compute_uniform_bind_group_layout_entry(1),
+                    make_compute_storage_bind_group_layout_entry(2, true),
+                    make_compute_storage_bind_group_layout_entry(3, false),
+                    make_compute_storage_bind_group_layout_entry(4, false),
+                    make_compute_storage_bind_group_layout_entry(5, false),
+                    make_compute_storage_bind_group_layout_entry(6, false),
+                    make_compute_storage_bind_group_layout_entry(7, false),
                 ],
             });
         let pipeline_layout = render_device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -226,7 +269,7 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        world.insert_resource(Buffers { points, heights, voxels, vertices, normals, indices, atomics });
+        world.insert_resource(Buffers { edge_table, tri_table, points, heights, voxels, vertices, normals, uvs, indices, atomics });
 
         VoxelsPipeline {
             simplex_pipeline,
@@ -246,8 +289,7 @@ fn marching_cubes(
     render_queue: Res<RenderQueue>,
     pipeline: Res<VoxelsPipeline>,
 ) {
-    // use std::time::Instant;
-    // let now = Instant::now();
+    // let now = std::time::Instant::now();
 
     for (mesh, mut voxels) in query.iter_mut() {
         buffers.atomics.clear();
@@ -258,7 +300,7 @@ fn marching_cubes(
         buffers.points.clear();
         for x in 0..CHUNK_SZ {
             for y in 0..CHUNK_SZ {
-                buffers.points.push(Vec2::new(x as f32 + time, y as f32 + time));
+                buffers.points.push(0.1 * Vec2::new(x as f32 + time, y as f32 + time));
             }
         }
 
@@ -275,11 +317,14 @@ fn marching_cubes(
                 label: Some("voxels binding"),
                 layout: &pipeline.voxels_layout,
                 entries: &[
-                    BindGroupEntry { binding: 0, resource: buffers.voxels.as_entire_binding() },
-                    BindGroupEntry { binding: 1, resource: buffers.vertices.buffer().unwrap().as_entire_binding() },
-                    BindGroupEntry { binding: 2, resource: buffers.normals.buffer().unwrap().as_entire_binding() },
-                    BindGroupEntry { binding: 3, resource: buffers.indices.buffer().unwrap().as_entire_binding() },
-                    BindGroupEntry { binding: 4, resource: buffers.atomics.buffer().unwrap().as_entire_binding() },
+                    BindGroupEntry { binding: 0, resource: buffers.edge_table.as_entire_binding() },
+                    BindGroupEntry { binding: 1, resource: buffers.tri_table.as_entire_binding() },
+                    BindGroupEntry { binding: 2, resource: buffers.voxels.as_entire_binding() },
+                    BindGroupEntry { binding: 3, resource: buffers.atomics.buffer().unwrap().as_entire_binding() },
+                    BindGroupEntry { binding: 4, resource: buffers.vertices.buffer().unwrap().as_entire_binding() },
+                    BindGroupEntry { binding: 5, resource: buffers.normals.buffer().unwrap().as_entire_binding() },
+                    BindGroupEntry { binding: 6, resource: buffers.indices.buffer().unwrap().as_entire_binding() },
+                    BindGroupEntry { binding: 7, resource: buffers.uvs.buffer().unwrap().as_entire_binding() },
                 ],
             }),
         };
@@ -298,9 +343,21 @@ fn marching_cubes(
             for z in 0..CHUNK_SZ {
                 for y in 0..CHUNK_SZ {
                     for x in 0..CHUNK_SZ {
-                        let height = ((buffers.heights.as_slice()[x + y * CHUNK_SZ] + 1.0) * 4.0) as usize;
+                        let noise01 = (buffers.heights.as_slice()[x + y * CHUNK_SZ] + 1.0) * 0.5;
+                        let height = noise01 * 4.0 + 8.0 - (z as f32);
+                        let mut density = 0.0;
+                        if height > 1.0 {
+                            density = 1.0;
+                        } else if height > 0.0 {
+                            density = height;
+                        }
+                        // voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
+                        //     flags: if z == (noise01 * 4.0) as usize { 1 } else { 0 },
+                        //     density: 0.0,
+                        // };
                         voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
-                            density: if z == height { 1.0 } else { 0.0 }
+                            flags: 0,
+                            density,
                         };
                     }
                 }
@@ -319,7 +376,8 @@ fn marching_cubes(
             let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline.voxels_pipeline);
             pass.set_bind_group(0, &binding_groups.voxels, &[]);
-            pass.dispatch((CHUNK_SZ / 8) as u32, (CHUNK_SZ / 8) as u32, (CHUNK_SZ / 8) as u32);
+            let dispatch_size = (CHUNK_SZ / 8) as u32;
+            pass.dispatch(dispatch_size, dispatch_size, dispatch_size);
         }
         render_queue.submit(vec![command_encoder.finish()]);
 
@@ -328,6 +386,7 @@ fn marching_cubes(
         let index_count = buffers.atomics.as_slice()[1] as usize;
         buffers.vertices.read_buffer(vertex_count, render_device.as_ref());
         buffers.normals.read_buffer(vertex_count, render_device.as_ref());
+        buffers.uvs.read_buffer(vertex_count, render_device.as_ref());
         buffers.indices.read_buffer(index_count, render_device.as_ref());
 
         let mesh = meshes.get_mut(mesh).unwrap();
@@ -353,15 +412,11 @@ fn marching_cubes(
         if let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) {
             uvs.clear();
             uvs.reserve(vertex_count);
-            for _ in 0..vertex_count / 4 {
-                uvs.push([0.0, 0.0]);
-                uvs.push([1.0, 0.0]);
-                uvs.push([1.0, 1.0]);
-                uvs.push([0.0, 1.0]);
+            for v in buffers.uvs.iter() {
+                uvs.push([v[0], v[1]]);
             }
         }
     }
 
-    // let elapsed = now.elapsed();
-    // println!("Elapsed: {:.2?}", elapsed);
+    // println!("Elapsed: {:.2?}", now.elapsed());
 }
