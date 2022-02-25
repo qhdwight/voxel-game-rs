@@ -61,15 +61,17 @@ var<storage, read_write> out_indices: IndexBuffer;
 var<storage, read_write> out_uvs: UvBuffer;
 
 
+let chunk_sz = 32;
+
 fn get_flat_index(pos: vec3<i32>) -> u32 {
-    return u32(pos.x + pos.y * 32 + pos.z * 32 * 32);
+    return u32(pos.x + pos.y * chunk_sz + pos.z * chunk_sz * chunk_sz);
 }
 
 fn get_voxel_density(pos: vec3<i32>) -> f32 {
     var density: f32 = 0.0;
-    if (pos.x >= 0 && pos.x < 32
-     && pos.y >= 0 && pos.y < 32
-     && pos.z >= 0 && pos.z < 32) {
+    if (pos.x >= 0 && pos.x < chunk_sz
+     && pos.y >= 0 && pos.y < chunk_sz
+     && pos.z >= 0 && pos.z < chunk_sz) {
         density = in_voxels.data[get_flat_index(pos)].density;
     }
     return density;
@@ -185,39 +187,39 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
         var block_faces = array<array<vec3<f32>, 4>, 6>(
             array<vec3<f32>, 4>(
                 vec3<f32>(0.5, -0.5, -0.5),
-                vec3<f32>(0.5, 0.5, -0.5),
-                vec3<f32>(0.5, 0.5, 0.5),
-                vec3<f32>(0.5, -0.5, 0.5),
+                vec3<f32>(0.5,  0.5, -0.5),
+                vec3<f32>(0.5,  0.5,  0.5),
+                vec3<f32>(0.5, -0.5,  0.5),
             ),
             array<vec3<f32>, 4>(
-                vec3<f32>(-0.5, -0.5, 0.5),
-                vec3<f32>(-0.5, 0.5, 0.5),
-                vec3<f32>(-0.5, 0.5, -0.5),
+                vec3<f32>(-0.5, -0.5,  0.5),
+                vec3<f32>(-0.5,  0.5,  0.5),
+                vec3<f32>(-0.5,  0.5, -0.5),
                 vec3<f32>(-0.5, -0.5, -0.5)
             ),
             array<vec3<f32>, 4>(
-                vec3<f32>(-0.5, 0.5, 0.5),
-                vec3<f32>(0.5, 0.5, 0.5),
-                vec3<f32>(0.5, 0.5, -0.5),
+                vec3<f32>(-0.5, 0.5,  0.5),
+                vec3<f32>( 0.5, 0.5,  0.5),
+                vec3<f32>( 0.5, 0.5, -0.5),
                 vec3<f32>(-0.5, 0.5, -0.5)
             ),
             array<vec3<f32>, 4>(
                 vec3<f32>(-0.5, -0.5, -0.5),
-                vec3<f32>(0.5, -0.5, -0.5),
-                vec3<f32>(0.5, -0.5, 0.5),
-                vec3<f32>(-0.5, -0.5, 0.5)
+                vec3<f32>( 0.5, -0.5, -0.5),
+                vec3<f32>( 0.5, -0.5,  0.5),
+                vec3<f32>(-0.5, -0.5,  0.5)
             ),
             array<vec3<f32>, 4>(
-                vec3<f32>(0.5, -0.5, 0.5),
-                vec3<f32>(0.5, 0.5, 0.5),
-                vec3<f32>(-0.5, 0.5, 0.5),
+                vec3<f32>( 0.5, -0.5, 0.5),
+                vec3<f32>( 0.5,  0.5, 0.5),
+                vec3<f32>(-0.5,  0.5, 0.5),
                 vec3<f32>(-0.5, -0.5, 0.5)
             ),
             array<vec3<f32>, 4>(
                 vec3<f32>(-0.5, -0.5, -0.5),
-                vec3<f32>(-0.5, 0.5, -0.5),
-                vec3<f32>(0.5, 0.5, -0.5),
-                vec3<f32>(0.5, -0.5, -0.5)
+                vec3<f32>(-0.5,  0.5, -0.5),
+                vec3<f32>( 0.5,  0.5, -0.5),
+                vec3<f32>( 0.5, -0.5, -0.5)
             ),
         );
         var block_adj_offsets = array<vec3<i32>, 6>(

@@ -289,6 +289,8 @@ fn marching_cubes(
     render_queue: Res<RenderQueue>,
     pipeline: Res<VoxelsPipeline>,
 ) {
+    // let now = std::time::Instant::now();
+
     for (mesh, mut voxels) in query.iter_mut() {
         buffers.atomics.clear();
         buffers.atomics.push(0);
@@ -415,4 +417,6 @@ fn marching_cubes(
             }
         }
     }
+
+    // println!("Elapsed: {:.2?}", now.elapsed());
 }

@@ -101,9 +101,7 @@ impl<T: Pod> BufferVec<T> {
         }
         if let Some(buffer) = &self.buffer {
             let buffer_slice = &buffer.slice(..);
-            // let now = std::time::Instant::now();
             device.map_buffer(buffer_slice, MapMode::Read);
-            // println!("Elapsed: {:.2?}", now.elapsed());
             let range = 0..self.item_size * len;
             self.values.resize(len, unsafe { std::mem::zeroed() });
             self.values.copy_from_slice(cast_slice(&buffer_slice.get_mapped_range()[range]));
