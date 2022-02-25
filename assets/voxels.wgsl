@@ -58,6 +58,17 @@ fn interp_vertex(p1: vec3<f32>, p2: vec3<f32>, v1: f32, v2: f32) -> vec3<f32> {
     return p1 + mu * (p2 - p1);
 }
 
+let smooth_adj_offsets = array<vec3<i32>, 8>(
+    vec3<i32>(0, 0, 1),
+    vec3<i32>(1, 0, 1),
+    vec3<i32>(1, 0, 0),
+    vec3<i32>(0, 0, 0),
+    vec3<i32>(0, 1, 1),
+    vec3<i32>(1, 1, 1),
+    vec3<i32>(1, 1, 0),
+    vec3<i32>(0, 1, 0)
+);
+
 [[stage(compute), workgroup_size(8, 8, 8)]]
 fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
 
@@ -107,17 +118,6 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
         vec3<i32>(0, -1, 0),
         vec3<i32>(0, 0, 1),
         vec3<i32>(0, 0, -1),
-    );
-
-    var smooth_adj_offsets = array<vec3<i32>, 8>(
-        vec3<i32>(0, 0, 1),
-        vec3<i32>(1, 0, 1),
-        vec3<i32>(1, 0, 0),
-        vec3<i32>(0, 0, 0),
-        vec3<i32>(0, 1, 1),
-        vec3<i32>(1, 1, 1),
-        vec3<i32>(1, 1, 0),
-        vec3<i32>(0, 1, 0)
     );
 
     var edge_table = array<u32, 256>(
@@ -420,7 +420,7 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
     if (voxel.flags == 0u) {
         var cube_idx: u32 = 0u;
         var orient: u32 = 0u;
-        var positions = array<vec3<f32>, 8>(
+        let positions = array<vec3<f32>, 8>(
             vec3<f32>(pos + smooth_adj_offsets[0u]),
             vec3<f32>(pos + smooth_adj_offsets[1u]),
             vec3<f32>(pos + smooth_adj_offsets[2u]),
@@ -430,7 +430,7 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
             vec3<f32>(pos + smooth_adj_offsets[6u]),
             vec3<f32>(pos + smooth_adj_offsets[7u]),
         );
-        var densities = array<f32, 8>(
+        let densities = array<f32, 8>(
             get_voxel_density(pos + smooth_adj_offsets[0u]),
             get_voxel_density(pos + smooth_adj_offsets[1u]),
             get_voxel_density(pos + smooth_adj_offsets[2u]),

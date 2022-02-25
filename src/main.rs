@@ -273,9 +273,6 @@ fn marching_cubes(
     render_queue: Res<RenderQueue>,
     pipeline: Res<VoxelsPipeline>,
 ) {
-    // use std::time::Instant;
-    // let now = Instant::now();
-
     for (mesh, mut voxels) in query.iter_mut() {
         buffers.atomics.clear();
         buffers.atomics.push(0);
@@ -285,7 +282,7 @@ fn marching_cubes(
         buffers.points.clear();
         for x in 0..CHUNK_SZ {
             for y in 0..CHUNK_SZ {
-                buffers.points.push(Vec2::new(x as f32 + time, y as f32 + time));
+                buffers.points.push(0.1 * Vec2::new(x as f32 + time, y as f32 + time));
             }
         }
 
@@ -327,7 +324,7 @@ fn marching_cubes(
                     for x in 0..CHUNK_SZ {
                         let noise01 = (buffers.heights.as_slice()[x + y * CHUNK_SZ] + 1.0) * 0.5;
                         let height = noise01 * 4.0 + 8.0 - (z as f32);
-                        let mut density= 0.0;
+                        let mut density = 0.0;
                         if height > 1.0 {
                             density = 1.0;
                         } else if height > 0.0 {
@@ -339,7 +336,7 @@ fn marching_cubes(
                         // };
                         voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
                             flags: 0,
-                            density
+                            density,
                         };
                     }
                 }
@@ -358,7 +355,8 @@ fn marching_cubes(
             let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline.voxels_pipeline);
             pass.set_bind_group(0, &binding_groups.voxels, &[]);
-            pass.dispatch((CHUNK_SZ / 8) as u32, (CHUNK_SZ / 8) as u32, (CHUNK_SZ / 8) as u32);
+            let dispatch_size = (CHUNK_SZ / 8) as u32;
+            pass.dispatch(dispatch_size, dispatch_size, dispatch_size);
         }
         render_queue.submit(vec![command_encoder.finish()]);
 
@@ -405,7 +403,4 @@ fn marching_cubes(
             }
         }
     }
-
-    // let elapsed = now.elapsed();
-    // println!("Elapsed: {:.2?}", elapsed);
 }
