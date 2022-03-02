@@ -22,8 +22,12 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_asset::<Config>()
+        .init_asset_loader::<ConfigAssetLoader>()
         .add_startup_system(setup)
+        .add_system_to_stage(CoreStage::PreUpdate, update_input)
         .add_system(update_text)
+        .add_system(manage_inventory)
         .add_system(camera_controller)
         .run();
 }
@@ -37,11 +41,16 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // println!("{}", toml::to_string(&Config::default()).unwrap());
+
+    let config: Handle<Config> = asset_server.load("default_config.toml");
+    commands.insert_resource(config);
+
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-    mesh.set_indices(Some(Indices::U32(Vec::new())));
-    mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(Vec::new()));
-    mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, VertexAttributeValues::Float32x3(Vec::new()));
-    mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, VertexAttributeValues::Float32x2(Vec::new()));
+    mesh.set_indices(Some(Indices::U32(Vec::with_capacity(4096))));
+    mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(Vec::with_capacity(4096)));
+    mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, VertexAttributeValues::Float32x3(Vec::with_capacity(4096)));
+    mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, VertexAttributeValues::Float32x2(Vec::with_capacity(4096)));
     let mesh = meshes.add(mesh);
     let material = materials.add(StandardMaterial {
         base_color: Color::RED,
@@ -52,7 +61,9 @@ fn setup(
         transform: Transform::from_xyz(-16.0, -16.0, 32.0),
         // transform: Transform::from_xyz(-6.0, 6.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
-    }).insert(CameraController::default());
+    })
+        .insert(PlayerInput::default())
+        .insert(CameraController::default());
 
     commands.spawn_bundle(PointLightBundle {
         point_light: PointLight {
@@ -144,8 +155,7 @@ fn update_text(
         }
 
         let mut frame_time = time.delta_seconds_f64();
-        if let Some(frame_time_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FRAME_TIME)
-        {
+        if let Some(frame_time_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FRAME_TIME) {
             if let Some(frame_time_avg) = frame_time_diagnostic.average() {
                 frame_time = frame_time_avg;
             }

@@ -8,6 +8,7 @@ use bevy::{
         render_resource::*,
         renderer::{RenderDevice, RenderQueue},
     },
+    utils::HashMap,
 };
 
 use crate::*;
@@ -19,14 +20,18 @@ const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
 const CHUNK_SZ_3: usize = CHUNK_SZ * CHUNK_SZ * CHUNK_SZ;
 
 #[derive(Component)]
-pub struct Voxels(Vec<Voxel>);
+pub struct Voxels {
+    pub chunks: HashMap<IVec3, Vec<Voxel>>,
+}
 
 impl Default for Voxels {
     #[inline]
     fn default() -> Voxels {
         let mut vec = Vec::with_capacity(CHUNK_SZ_3);
         vec.resize(CHUNK_SZ_3, Voxel::default());
-        Voxels { 0: vec }
+        let mut chunks = HashMap::default();
+        chunks.insert(IVec3::ZERO, vec);
+        Voxels { chunks }
     }
 }
 
@@ -77,8 +82,7 @@ impl Plugin for VoxelsPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<VoxelsPipeline>()
-            .add_system_set(SystemSet::new()
-                .with_system(marching_cubes));
+            .add_system_to_stage(CoreStage::PreUpdate, marching_cubes);
     }
 }
 
@@ -86,12 +90,12 @@ impl FromWorld for VoxelsPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
 
-        let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("edge table"), contents: cast_slice(EDGE_TABLE), usage: BufferUsages::UNIFORM });
-        let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("tri table"), contents: cast_slice(TRI_TABLE), usage: BufferUsages::UNIFORM });
+        let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("edge table buffer"), contents: cast_slice(EDGE_TABLE), usage: BufferUsages::UNIFORM });
+        let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("tri table buffer"), contents: cast_slice(TRI_TABLE), usage: BufferUsages::UNIFORM });
         let points: BufVec<Vec2> = BufVec::with_capacity(BufferUsages::STORAGE, CHUNK_SZ_2, render_device);
         let heights: BufVec<f32> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_2, render_device);
         let voxels = render_device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
+            label: Some("voxels buffer"),
             size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -244,7 +248,7 @@ pub fn marching_cubes(
                         //     flags: if z == (noise01 * 4.0) as usize { 1 } else { 0 },
                         //     density: 0.0,
                         // };
-                        voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
+                        voxels.chunks.get_mut(&IVec3::ZERO).unwrap()[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
                             flags: 0,
                             density,
                         };
@@ -255,8 +259,8 @@ pub fn marching_cubes(
         }
 
         buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
-        let range = 0..size_of::<Voxel>() * voxels.0.len();
-        let bytes: &[u8] = cast_slice(&voxels.0);
+        let range = 0..size_of::<Voxel>() * voxels.chunks[&IVec3::ZERO].len();
+        let bytes: &[u8] = cast_slice(&voxels.chunks[&IVec3::ZERO]);
         render_queue.write_buffer(&buffers.voxels, 0, &bytes[range]);
         buffers.atomics.write_buffer(render_device.as_ref(), render_queue.as_ref());
 
