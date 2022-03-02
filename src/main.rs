@@ -7,6 +7,10 @@ use bevy::{
     },
     window::WindowDescriptor,
 };
+use bevy_rapier3d::{
+    na::Point3,
+    prelude::*,
+};
 
 use qgame::*;
 
@@ -20,22 +24,24 @@ fn main() {
             ..Default::default()
         })
         .add_plugins(DefaultPlugins)
+        .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_asset::<Config>()
         .init_asset_loader::<ConfigAssetLoader>()
-        .add_startup_system(setup)
-        .add_system_to_stage(CoreStage::PreUpdate, update_input)
-        .add_system(update_text)
-        .add_system(manage_inventory)
-        .add_system(camera_controller)
+        .add_startup_system(setup_system)
+        .add_system_to_stage(CoreStage::PreUpdate, player_input_system)
+        .add_system(cursor_grab_system)
+        .add_system(update_text_system)
+        .add_system(manage_inventory_system)
+        .add_system(player_controller_system)
         .run();
 }
 
 #[derive(Component)]
 struct TextChanges;
 
-fn setup(
+fn setup_system(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -62,8 +68,16 @@ fn setup(
         // transform: Transform::from_xyz(-6.0, 6.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
     })
+        .insert_bundle(ColliderBundle {
+            shape: ColliderShape::capsule(Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0), 0.5).into(),
+            collider_type: ColliderType::Solid.into(),
+            position: Vec3::new(16.0, 16.0, 16.0).into(),
+            material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
+            mass_properties: ColliderMassProps::Density(2.0).into(),
+            ..Default::default()
+        })
         .insert(PlayerInput::default())
-        .insert(CameraController::default());
+        .insert(PlayerController::default());
 
     commands.spawn_bundle(PointLightBundle {
         point_light: PointLight {
@@ -141,7 +155,7 @@ struct BindingGroups {
     voxels: BindGroup,
 }
 
-fn update_text(
+fn update_text_system(
     time: Res<Time>,
     diagnostics: Res<Diagnostics>,
     mut query: Query<&mut Text, With<TextChanges>>,

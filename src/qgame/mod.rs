@@ -9,17 +9,17 @@ use bevy::{
 };
 use wgpu::{BufferUsages, MapMode};
 
+pub use controller::*;
+pub use input::*;
+pub use inventory::*;
+pub use lookup::*;
+pub use voxel::*;
+
 mod input;
 mod voxel;
 mod lookup;
 mod inventory;
 mod controller;
-
-pub use input::*;
-pub use voxel::*;
-pub use lookup::*;
-pub use inventory::*;
-pub use controller::*;
 
 pub struct BufVec<T: Pod> {
     values: Vec<T>,

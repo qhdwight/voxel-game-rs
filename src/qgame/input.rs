@@ -1,12 +1,12 @@
 use bevy::{
     asset::{AssetLoader, LoadContext, LoadedAsset},
+    input::mouse::MouseMotion,
     prelude::*,
     reflect::TypeUuid,
     utils::BoxedFuture,
-    input::mouse::MouseMotion,
 };
 use flagset::{flags, FlagSet};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 flags! {
     pub enum PlayerInputFlags: u32 {
@@ -66,7 +66,23 @@ fn get_axis(key_input: &Res<Input<KeyCode>>, key_pos: KeyCode, key_neg: KeyCode)
     get_pressed(key_input, key_pos) - get_pressed(key_input, key_neg)
 }
 
-pub fn update_input(
+pub fn cursor_grab_system(
+    mut windows: ResMut<Windows>,
+    btn: Res<Input<MouseButton>>,
+    key: Res<Input<KeyCode>>,
+) {
+    let window = windows.get_primary_mut().unwrap();
+    if btn.just_pressed(MouseButton::Left) {
+        window.set_cursor_lock_mode(true);
+        window.set_cursor_visibility(false);
+    }
+    if key.just_pressed(KeyCode::Escape) {
+        window.set_cursor_lock_mode(false);
+        window.set_cursor_visibility(true);
+    }
+}
+
+pub fn player_input_system(
     key_input: Res<Input<KeyCode>>,
     config: Res<Assets<Config>>,
     config_handle: Res<Handle<Config>>,

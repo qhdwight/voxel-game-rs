@@ -1,8 +1,8 @@
+use std::option::Option;
+
 use bevy::{
-    input::mouse::MouseMotion,
     prelude::*,
 };
-use std::option::Option;
 
 #[derive(Component)]
 pub struct Item {
@@ -22,11 +22,9 @@ pub struct Inventory {
     pub previous_equipped_idx: Option<usize>,
 }
 
-pub fn manage_inventory(
+pub fn manage_inventory_system(
     time: Res<Time>,
     mut query: Query<(&mut Item, With<Inventory>)>,
 ) {
-    for (mut inventory) in query.iter_mut() {
-
-    }
+    for (mut inventory) in query.iter_mut() {}
 }
