@@ -10,57 +10,47 @@ use bevy::{
     },
     utils::HashMap,
 };
+// use flagset::{flags, FlagSet};
 
 use crate::*;
-
-// use enumflags2::{bitflags, BitFlags};
 
 const CHUNK_SZ: usize = 32;
 const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
 const CHUNK_SZ_3: usize = CHUNK_SZ * CHUNK_SZ * CHUNK_SZ;
 
 #[derive(Component)]
-pub struct Voxels {
-    pub chunks: HashMap<IVec3, Vec<Voxel>>,
+pub struct Chunk {
+    pub position: IVec3,
+    pub voxels: Vec<Voxel>,
 }
 
-impl Default for Voxels {
-    #[inline]
-    fn default() -> Voxels {
-        let mut vec = Vec::with_capacity(CHUNK_SZ_3);
-        vec.resize(CHUNK_SZ_3, Voxel::default());
-        let mut chunks = HashMap::default();
-        chunks.insert(IVec3::ZERO, vec);
-        Voxels { chunks }
+#[derive(Component)]
+pub struct Map {
+    pub chunks: HashMap<IVec3, Entity>,
+}
+
+impl Default for Map {
+    fn default() -> Self {
+        Self {
+            chunks: HashMap::default(),
+        }
     }
 }
 
-// #[bitflags]
-// #[repr(u32)]
-// #[derive(Copy, Clone, PartialEq)]
-// enum VoxelProps {
-//     IsBlock,
+impl Chunk {
+    pub fn new(position: IVec3) -> Self {
+        let mut voxels = Vec::with_capacity(CHUNK_SZ_3);
+        voxels.resize(CHUNK_SZ_3, Voxel::default());
+        Self { position, voxels }
+    }
+}
+
+// flags! {
+//     #[repr(u32)]
+//     pub enum VoxelFlags: u32 {
+//         IsBlock,
+//     }
 // }
-//
-// struct VoxelFlags(BitFlags<VoxelProps>);
-//
-// impl Default for VoxelFlags {
-//     #[inline]
-//     fn default() -> VoxelFlags { VoxelFlags::zeroed() }
-// }
-//
-// unsafe impl Zeroable for VoxelFlags {
-//     #[inline]
-//     fn zeroed() -> Self { unsafe { std::mem::zeroed() } }
-// }
-//
-// impl Copy for VoxelFlags {}
-//
-// impl Clone for VoxelFlags { fn clone(&self) -> Self { *self } }
-//
-// unsafe impl Pod for VoxelFlags {}
-//
-//
 
 #[derive(Copy, Clone, Default, Pod, Zeroable)]
 #[repr(C)]
@@ -82,7 +72,7 @@ impl Plugin for VoxelsPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<VoxelsPipeline>()
-            .add_system_to_stage(CoreStage::PreUpdate, marching_cubes);
+            .add_system_to_stage(CoreStage::PreUpdate, voxel_polygonize_system);
     }
 }
 
@@ -173,8 +163,19 @@ impl FromWorld for VoxelsPipeline {
     }
 }
 
-pub fn marching_cubes(
-    mut query: Query<(&Handle<Mesh>, &mut Voxels)>,
+pub fn sync_added_chunks_system(
+    added_chunk_query: Query<(Entity, &Chunk), Added<Chunk>>,
+    mut map_query: Query<&mut Map>,
+) {
+    for (chunk_entity, chunk) in added_chunk_query.iter() {
+        for mut map in map_query.iter_mut() {
+            map.chunks.insert(chunk.position, chunk_entity);
+        }
+    }
+}
+
+pub fn voxel_polygonize_system(
+    mut query: Query<(&Handle<Mesh>, &mut ColliderShapeComponent, &mut Chunk)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut buffers: ResMut<Buffers>,
     time: Res<Time>,
@@ -184,7 +185,7 @@ pub fn marching_cubes(
 ) {
     // let now = std::time::Instant::now();
 
-    for (mesh, mut voxels) in query.iter_mut() {
+    for (mesh, mut collider, mut chunk) in query.iter_mut() {
         buffers.atomics.clear();
         buffers.atomics.push(0);
         buffers.atomics.push(0);
@@ -239,6 +240,7 @@ pub fn marching_cubes(
                         let noise01 = (buffers.heights.as_slice()[x + y * CHUNK_SZ] + 1.0) * 0.5;
                         let height = noise01 * 4.0 + 8.0 - (z as f32);
                         let mut density = 0.0;
+
                         if height > 1.0 {
                             density = 1.0;
                         } else if height > 0.0 {
@@ -248,19 +250,19 @@ pub fn marching_cubes(
                         //     flags: if z == (noise01 * 4.0) as usize { 1 } else { 0 },
                         //     density: 0.0,
                         // };
-                        voxels.chunks.get_mut(&IVec3::ZERO).unwrap()[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
+                        chunk.voxels[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
                             flags: 0,
                             density,
                         };
                     }
                 }
             }
-            // buffers.points.clear();
+            buffers.points.clear();
         }
 
         buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
-        let range = 0..size_of::<Voxel>() * voxels.chunks[&IVec3::ZERO].len();
-        let bytes: &[u8] = cast_slice(&voxels.chunks[&IVec3::ZERO]);
+        let range = 0..size_of::<Voxel>() * chunk.voxels.len();
+        let bytes: &[u8] = cast_slice(&chunk.voxels);
         render_queue.write_buffer(&buffers.voxels, 0, &bytes[range]);
         buffers.atomics.write_buffer(render_device.as_ref(), render_queue.as_ref());
 
@@ -308,6 +310,10 @@ pub fn marching_cubes(
             for v in buffers.uvs.iter() {
                 uvs.push([v[0], v[1]]);
             }
+        }
+
+        if let Some(trimesh) = collider.as_trimesh() {
+            trimesh.vertices();
         }
     }
 

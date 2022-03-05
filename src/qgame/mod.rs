@@ -112,10 +112,10 @@ impl<T: Pod> BufVec<T> {
             self.reserve(len, device);
         }
         if let Some(buffer) = &self.buffer {
+            self.values.resize(len, T::zeroed());
             let buffer_slice = &buffer.slice(..);
             device.map_buffer(buffer_slice, MapMode::Read);
             let range = 0..self.item_size * len;
-            self.values.resize(len, unsafe { std::mem::zeroed() });
             self.values.copy_from_slice(cast_slice(&buffer_slice.get_mapped_range()[range]));
             buffer.unmap();
         }

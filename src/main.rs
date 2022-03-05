@@ -69,11 +69,15 @@ fn setup_system(
         ..Default::default()
     })
         .insert_bundle(ColliderBundle {
-            shape: ColliderShape::capsule(Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0), 0.5).into(),
+            shape: ColliderShape::capsule(Point3::new(0.0, 0.0, 0.5), Point3::new(0.0, 0.0, 1.5), 0.5).into(),
             collider_type: ColliderType::Solid.into(),
             position: Vec3::new(16.0, 16.0, 16.0).into(),
             material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
             mass_properties: ColliderMassProps::Density(2.0).into(),
+            ..Default::default()
+        })
+        .insert_bundle(RigidBodyBundle {
+            body_type: RigidBodyType::KinematicVelocityBased.into(),
             ..Default::default()
         })
         .insert(PlayerInput::default())
@@ -99,11 +103,23 @@ fn setup_system(
         ..Default::default()
     });
 
-    commands.spawn().insert(Voxels::default()).insert_bundle(PbrBundle {
-        mesh: mesh.clone(),
-        material: material.clone(),
-        ..Default::default()
-    });
+    commands.spawn().insert(Map::default());
+
+    commands.spawn()
+        .insert(Chunk::new(IVec3::ZERO))
+        .insert_bundle(ColliderBundle {
+            shape: ColliderShape::trimesh(Vec::new(), Vec::new()).into(),
+            collider_type: ColliderType::Solid.into(),
+            position: Vec3::new(0.0, 0.0, 0.0).into(),
+            material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
+            mass_properties: ColliderMassProps::Density(2.0).into(),
+            ..Default::default()
+        })
+        .insert_bundle(PbrBundle {
+            mesh: mesh.clone(),
+            material: material.clone(),
+            ..Default::default()
+        });
 
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
     commands.spawn_bundle(UiCameraBundle::default());
