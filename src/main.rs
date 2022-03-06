@@ -1,3 +1,5 @@
+use std::f32::consts::{FRAC_PI_4, FRAC_PI_6};
+
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
@@ -23,8 +25,13 @@ fn main() {
             title: String::from("QGame"),
             ..Default::default()
         })
+        .insert_resource(AmbientLight {
+            color: Color::WHITE,
+            brightness: 0.25,
+        })
         .add_plugins(DefaultPlugins)
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugin(RapierRenderPlugin)
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_asset::<Config>()
@@ -34,7 +41,10 @@ fn main() {
         .add_system(cursor_grab_system)
         .add_system(update_text_system)
         .add_system(manage_inventory_system)
-        .add_system(player_controller_system)
+        .add_system_set(SystemSet::new()
+            .with_system(player_look_system)
+            .with_system(player_controller_system))
+        .add_system_to_stage(CoreStage::PostUpdate, sync_camera_system)
         .run();
 }
 
@@ -63,36 +73,40 @@ fn setup_system(
         ..Default::default()
     });
 
-    commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: Transform::from_xyz(-16.0, -16.0, 32.0),
-        // transform: Transform::from_xyz(-6.0, 6.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..Default::default()
-    })
+    commands.spawn_bundle(PerspectiveCameraBundle::default());
+
+    commands.spawn()
         .insert_bundle(ColliderBundle {
             shape: ColliderShape::capsule(Point3::new(0.0, 0.0, 0.5), Point3::new(0.0, 0.0, 1.5), 0.5).into(),
             collider_type: ColliderType::Solid.into(),
-            position: Vec3::new(16.0, 16.0, 16.0).into(),
             material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
             mass_properties: ColliderMassProps::Density(2.0).into(),
             ..Default::default()
         })
+        .insert(ColliderDebugRender::with_id(0))
         .insert_bundle(RigidBodyBundle {
-            body_type: RigidBodyType::KinematicVelocityBased.into(),
+            body_type: RigidBodyType::KinematicPositionBased.into(),
+            position: Vec3::new(-16.0, -16.0, 32.0).into(),
             ..Default::default()
         })
-        .insert(RigidBodyPositionSync::Discrete)
-        .insert(PlayerInput::default())
-        .insert(PlayerController::default());
-
-    commands.spawn_bundle(PointLightBundle {
-        point_light: PointLight {
-            intensity: 2000.0,
-            shadows_enabled: true,
+        .insert(PlayerInput {
+            pitch: FRAC_PI_4,
+            yaw: -FRAC_PI_6,
             ..Default::default()
-        },
-        transform: Transform::from_xyz(38.0, -34.0, 40.0),
-        ..Default::default()
-    });
+        })
+        .insert(PlayerController {
+            ..Default::default()
+        });
+
+    // commands.spawn_bundle(PointLightBundle {
+    //     point_light: PointLight {
+    //         intensity: 2000.0,
+    //         shadows_enabled: true,
+    //         ..Default::default()
+    //     },
+    //     transform: Transform::from_xyz(38.0, -34.0, 40.0),
+    //     ..Default::default()
+    // });
 
     commands.spawn_bundle(DirectionalLightBundle {
         directional_light: DirectionalLight {
@@ -104,18 +118,33 @@ fn setup_system(
         ..Default::default()
     });
 
+    {
+        let mesh = meshes.add(Mesh::from(bevy::prelude::shape::Cube { size: 1.0 }));
+        let material = materials.add(StandardMaterial {
+            base_color: Color::PINK,
+            ..Default::default()
+        });
+        commands.spawn_bundle(PbrBundle {
+            mesh: mesh.clone(),
+            material: material.clone(),
+            transform: Transform::from_xyz(-18.0, -18.0, 32.0),
+            ..Default::default()
+        });
+    }
+
     commands.spawn().insert(Map::default());
 
     commands.spawn()
         .insert(Chunk::new(IVec3::ZERO))
-        .insert_bundle(ColliderBundle {
-            shape: ColliderShape::trimesh(Vec::new(), Vec::new()).into(),
-            collider_type: ColliderType::Solid.into(),
-            position: Vec3::new(0.0, 0.0, 0.0).into(),
-            material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
-            mass_properties: ColliderMassProps::Density(2.0).into(),
-            ..Default::default()
-        })
+        // .insert_bundle(ColliderBundle {
+        //     shape: ColliderShape::trimesh(Vec::new(), Vec::new()).into(),
+        //     collider_type: ColliderType::Solid.into(),
+        //     position: Vec3::new(0.0, 0.0, 0.0).into(),
+        //     material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
+        //     mass_properties: ColliderMassProps::Density(2.0).into(),
+        //     ..Default::default()
+        // })
+        .insert(ColliderDebugRender::with_id(1))
         .insert_bundle(PbrBundle {
             mesh: mesh.clone(),
             material: material.clone(),
