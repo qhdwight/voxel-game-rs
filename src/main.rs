@@ -80,6 +80,7 @@ fn setup_system(
             body_type: RigidBodyType::KinematicVelocityBased.into(),
             ..Default::default()
         })
+        .insert(RigidBodyPositionSync::Discrete)
         .insert(PlayerInput::default())
         .insert(PlayerController::default());
 

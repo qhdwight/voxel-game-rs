@@ -79,6 +79,7 @@ impl Plugin for VoxelsPlugin {
 impl FromWorld for VoxelsPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
+        let asset_server = world.get_resource::<AssetServer>().unwrap();
 
         let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("edge table buffer"), contents: cast_slice(EDGE_TABLE), usage: BufferUsages::UNIFORM });
         let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("tri table buffer"), contents: cast_slice(TRI_TABLE), usage: BufferUsages::UNIFORM });
@@ -96,7 +97,8 @@ impl FromWorld for VoxelsPipeline {
         let indices: BufVec<u32> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 6 * 6, render_device);
         let atomics: BufVec<u32> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, 2, render_device);
 
-        let shader_source = include_str!("../../assets/simplex.wgsl");
+        // let simplex_shader = asset_server.load("shaders/simplex.wgsl");
+        let shader_source = include_str!("../../assets/shaders/simplex.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("simplex shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
@@ -121,7 +123,8 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        let shader_source = include_str!("../../assets/voxels.wgsl");
+        // let voxel_shader = asset_server.load("shaders/voxels.wgsl");
+        let shader_source = include_str!("../../assets/shaders/voxels.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("voxels shader"),
             source: ShaderSource::Wgsl(shader_source.into()),

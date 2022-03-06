@@ -1,13 +1,16 @@
 use std::f32::consts::{FRAC_PI_4, FRAC_PI_6, PI};
 
-use bevy::prelude::*;
-use bevy_rapier3d::{
-    na::Point3,
+use bevy::{
+    math::Vec3Swizzles,
     prelude::*,
-    rapier::parry::query::RayCast,
+};
+use bevy_rapier3d::{
+    na::UnitQuaternion,
+    prelude::*,
 };
 
 use crate::{PlayerInput, PlayerInputFlags};
+use crate::nalgebra::Isometry3;
 
 pub enum MoveMode {
     Noclip,
@@ -16,16 +19,23 @@ pub enum MoveMode {
 
 #[derive(Component)]
 pub struct PlayerController {
-    pub move_mode: MoveMode,
     pub enabled: bool,
-    pub fly_speed: f32,
-    pub fast_fly_speed: f32,
+    pub move_mode: MoveMode,
     pub gravity: f32,
     pub walk_speed: f32,
     pub run_speed: f32,
     pub fwd_speed: f32,
     pub side_speed: f32,
+    pub air_speed_cap: f32,
+    pub air_accel: f32,
+    pub max_air_speed: f32,
+    pub accel: f32,
     pub friction: f32,
+    pub friction_cutoff: f32,
+    pub jump_speed: f32,
+    pub fly_speed: f32,
+    pub fast_fly_speed: f32,
+    pub fly_friction: f32,
     pub pitch: f32,
     pub yaw: f32,
     pub velocity: Vec3,
@@ -40,17 +50,24 @@ impl Default for PlayerController {
             enabled: true,
             fly_speed: 10.0,
             fast_fly_speed: 30.0,
-            gravity: 9.8,
+            gravity: 23.0,
             walk_speed: 10.0,
             run_speed: 30.0,
-            fwd_speed: 0.0,
-            side_speed: 10.0,
-            friction: 0.5,
+            fwd_speed: 30.0,
+            side_speed: 30.0,
+            air_speed_cap: 2.0,
+            air_accel: 20.0,
+            max_air_speed: 8.0,
+            accel: 10.0,
+            friction: 10.0,
+            friction_cutoff: 0.1,
+            fly_friction: 0.5,
             pitch: FRAC_PI_4,
             yaw: -FRAC_PI_6,
             velocity: Vec3::ZERO,
             ground_tick: 0,
             stop_speed: 1.0,
+            jump_speed: 8.5,
         }
     }
 }
@@ -78,16 +95,21 @@ pub fn player_controller_system(
     time: Res<Time>,
     query_pipeline: Res<QueryPipeline>, collider_query: QueryPipelineColliderComponentsQuery,
     mut query: Query<
-        (&mut Transform, &mut PlayerInput, &mut PlayerController, &ColliderShapeComponent, &mut RigidBodyVelocityComponent),
+        (&mut Transform, &mut PlayerInput, &mut PlayerController, &ColliderShapeComponent, &mut RigidBodyPositionComponent),
         With<Camera>
     >,
 ) {
     let dt = time.delta_seconds();
 
-    for (mut transform, input, mut controller, collider, mut rb_vel) in query.iter_mut() {
+    for (transform, input, controller, collider, rb_position) in query.iter_mut() {
         if !controller.enabled {
             continue;
         }
+
+        let mut transform: Mut<'_, Transform> = transform;
+        let input: Mut<'_, PlayerInput> = input;
+        let mut controller: Mut<'_, PlayerController> = controller;
+        let mut rb_position: Mut<'_, RigidBodyPositionComponent> = rb_position;
 
         let right = transform.right();
         let fwd = transform.forward();
@@ -95,7 +117,7 @@ pub fn player_controller_system(
         match controller.move_mode {
             MoveMode::Noclip => {
                 if input.movement == Vec3::ZERO {
-                    let friction = controller.friction.clamp(0.0, 1.0);
+                    let friction = controller.fly_friction.clamp(0.0, 1.0);
                     controller.velocity *= 1.0 - friction;
                     if controller.velocity.length_squared() < 1e-6 {
                         controller.velocity = Vec3::ZERO;
@@ -116,19 +138,15 @@ pub fn player_controller_system(
 
             MoveMode::Ground => {
                 if let Some(capsule) = collider.as_capsule() {
-                    // let capsule: Capsule = capsule;
-                    // let transform: Transform = transform;
-
-                    let init_vel = controller.velocity;
-                    let end_vel = init_vel;
-                    let lateral_speed = (init_vel.x * init_vel.x + init_vel.y * init_vel.y).sqrt();
-
+                    let mut init_vel = controller.velocity;
+                    let mut end_vel = init_vel;
                     let pos = transform.translation;
+                    let lateral_speed = init_vel.xy().length();
 
+                    let mut ground_hit = None;
                     let collider_set = QueryPipelineColliderComponentsSet(&collider_query);
-
                     let shape = Capsule::new(capsule.segment.a, capsule.segment.b, capsule.radius * 1.0625);
-                    let shape_pos = (transform.translation, transform.rotation).into();
+                    let shape_pos = (pos, transform.rotation).into();
                     let shape_vel = Vec3::new(0.0, 0.0, -0.1).into();
                     let max_toi = 4.0;
                     let groups = InteractionGroups::all();
@@ -138,6 +156,7 @@ pub fn player_controller_system(
                         &collider_set, &shape_pos, &shape_vel, &shape, max_toi, groups, filter,
                     ) {
                         println!("Hit the entity {:?} with the configuration: {:?}", handle.entity(), hit);
+                        ground_hit = Some(hit);
                     }
 
                     let mut wish_dir = input.movement.y * controller.fwd_speed * fwd + input.movement.x * controller.side_speed * right;
@@ -151,6 +170,39 @@ pub fn player_controller_system(
                     };
 
                     wish_speed = f32::min(wish_speed, max_speed);
+
+                    if let Some(ground_hit) = ground_hit {
+                        if controller.ground_tick >= 1 {
+                            if lateral_speed > controller.friction_cutoff {
+                                friction(lateral_speed, controller.friction, controller.stop_speed, dt, &mut end_vel);
+                            } else {
+                                end_vel.z = 0.0;
+                            }
+                        }
+                        accelerate(wish_dir, wish_speed, controller.accel, dt, &mut end_vel);
+                        if input.flags.contains(PlayerInputFlags::Jump) {
+                            // Simulate one ahead
+                            init_vel.z = controller.jump_speed;
+                            end_vel.z = init_vel.z - controller.gravity * dt;
+                        }
+                        controller.ground_tick = controller.ground_tick.saturating_add(1);
+                    } else {
+                        controller.ground_tick = 0;
+                        wish_speed = f32::min(wish_speed, controller.air_speed_cap);
+                        accelerate(wish_dir, wish_speed, controller.air_accel, dt, &mut end_vel);
+                        end_vel.z -= controller.gravity * dt;
+                        let air_speed = end_vel.xy().length();
+                        if air_speed > controller.max_air_speed {
+                            let ratio = controller.max_air_speed / air_speed;
+                            end_vel.x *= ratio;
+                            end_vel.y *= ratio;
+                        }
+                    }
+
+                    let dp = (init_vel + end_vel) * 0.5 * dt;
+                    let translation = Translation::from(pos + dp);
+                    let rotation = UnitQuaternion::from_scaled_axis((Vec3::Z * controller.yaw).into());
+                    rb_position.next_position = Isometry3::from_parts(translation, rotation);
                 }
             }
         }
