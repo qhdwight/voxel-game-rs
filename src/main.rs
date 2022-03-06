@@ -1,10 +1,12 @@
-use std::f32::consts::{FRAC_PI_4, FRAC_PI_6};
+use std::f32::consts::TAU;
 
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
     render::{
+        camera::CameraProjection,
         mesh::{Indices, VertexAttributeValues},
+        primitives::Frustum,
         render_resource::*,
     },
     window::WindowDescriptor,
@@ -73,7 +75,7 @@ fn setup_system(
         ..Default::default()
     });
 
-    commands.spawn_bundle(PerspectiveCameraBundle::default());
+    commands.spawn_bundle(PerspectiveCameraBundle::new_3d());
 
     commands.spawn()
         .insert_bundle(ColliderBundle {
@@ -86,12 +88,12 @@ fn setup_system(
         .insert(ColliderDebugRender::with_id(0))
         .insert_bundle(RigidBodyBundle {
             body_type: RigidBodyType::KinematicPositionBased.into(),
-            position: Vec3::new(-16.0, -16.0, 32.0).into(),
+            position: Vec3::new(-16.0, 32.0, -16.0).into(),
             ..Default::default()
         })
         .insert(PlayerInput {
-            pitch: FRAC_PI_4,
-            yaw: -FRAC_PI_6,
+            pitch: -TAU / 12.0,
+            yaw: TAU * 5.0 / 8.0,
             ..Default::default()
         })
         .insert(PlayerController {
@@ -114,7 +116,7 @@ fn setup_system(
             shadows_enabled: true,
             ..Default::default()
         },
-        transform: Transform::from_xyz(-38.0, 34.0, 40.0),
+        transform: Transform::from_xyz(-38.0, 40.0, 34.0),
         ..Default::default()
     });
 
@@ -127,7 +129,7 @@ fn setup_system(
         commands.spawn_bundle(PbrBundle {
             mesh: mesh.clone(),
             material: material.clone(),
-            transform: Transform::from_xyz(-18.0, -18.0, 32.0),
+            transform: Transform::from_xyz(-18.0, 32.0, -18.0),
             ..Default::default()
         });
     }

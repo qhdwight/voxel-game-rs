@@ -71,7 +71,7 @@ fn friction(lateral_speed: f32, friction: f32, stop_speed: f32, dt: f32, velocit
     let drop = control * friction * dt;
     let new_speed = f32::max((lateral_speed - drop) / lateral_speed, 0.0);
     velocity.x *= new_speed;
-    velocity.y *= new_speed;
+    velocity.z *= new_speed;
 }
 
 fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &mut Vec3) {
@@ -82,7 +82,7 @@ fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &m
     let accel_speed = f32::min(accel * wish_speed * dt, add_speed);
     let wish_dir = wish_dir * accel_speed;
     velocity.x += wish_dir.x;
-    velocity.y += wish_dir.y;
+    velocity.z += wish_dir.y;
 }
 
 pub fn player_look_system(
@@ -94,6 +94,10 @@ pub fn player_look_system(
     }
 }
 
+fn look_quat(pitch: f32, yaw: f32) -> Quat {
+    return Quat::from_euler(EulerRot::ZYX, 0.0, yaw, pitch);
+}
+
 pub fn sync_camera_system(
     controller_query: Query<(&PlayerController, &RigidBodyPositionComponent)>,
     mut camera_query: Query<&mut Transform, With<PerspectiveProjection>>,
@@ -101,7 +105,7 @@ pub fn sync_camera_system(
     for (controller, rb_position) in controller_query.iter() {
         for mut transform in camera_query.iter_mut() {
             transform.translation = rb_position.position.translation.into();
-            transform.rotation = Quat::from_euler(EulerRot::YZX, 0.0, controller.yaw, controller.pitch);
+            transform.rotation = look_quat(controller.pitch, controller.yaw);
         }
     }
 }
@@ -118,14 +122,13 @@ pub fn player_controller_system(
             continue;
         }
 
-        // let transform: &Transform = transform;
         // let input: &PlayerInput = input;
         // let mut controller: Mut<'_, PlayerController> = controller;
         // let mut rb_position: Mut<'_, RigidBodyPositionComponent> = rb_position;
 
-        let rot = Quat::from_euler(EulerRot::YZX, 0.0, input.yaw, input.pitch);
+        let rot = look_quat(input.pitch, input.yaw);
         let right = rot * Vec3::X;
-        let fwd = rot * Vec3::Y;
+        let fwd = rot * -Vec3::Z;
         let pos: Vec3 = rb_position.position.translation.into();
 
         match controller.move_mode {
@@ -146,8 +149,8 @@ pub fn player_controller_system(
                 }
                 let next_translation = pos
                     + controller.velocity.x * dt * right
-                    + controller.velocity.y * dt * fwd
-                    + controller.velocity.z * dt * Vec3::Z;
+                    + controller.velocity.y * dt * Vec3::Y
+                    + controller.velocity.z * dt * fwd;
                 let next_rot = Quat::from_axis_angle(Vec3::Z, input.yaw);
                 rb_position.next_position = (next_translation, next_rot).into();
             }
@@ -156,13 +159,13 @@ pub fn player_controller_system(
                 if let Some(capsule) = collider.as_capsule() {
                     let mut init_vel = controller.velocity;
                     let mut end_vel = init_vel;
-                    let lateral_speed = init_vel.xy().length();
+                    let lateral_speed = init_vel.xz().length();
 
                     let mut ground_hit = None;
                     let collider_set = QueryPipelineColliderComponentsSet(&collider_query);
                     let shape = Capsule::new(capsule.segment.a, capsule.segment.b, capsule.radius * 1.0625);
                     let shape_pos = (pos, rot).into();
-                    let shape_vel = Vec3::new(0.0, 0.0, -0.125).into();
+                    let shape_vel = Vec3::new(0.0, -0.125, 0.0).into();
                     let max_toi = 4.0;
                     let groups = InteractionGroups::all();
                     let filter = None;
@@ -198,20 +201,20 @@ pub fn player_controller_system(
                         accelerate(wish_dir, wish_speed, controller.accel, dt, &mut end_vel);
                         if input.flags.contains(PlayerInputFlags::Jump) {
                             // Simulate one update ahead, since this is an instant velocity change
-                            init_vel.z = controller.jump_speed;
-                            end_vel.z = init_vel.z - controller.gravity * dt;
+                            init_vel.y = controller.jump_speed;
+                            end_vel.y = init_vel.y - controller.gravity * dt;
                         }
                         controller.ground_tick = controller.ground_tick.saturating_add(1);
                     } else {
                         controller.ground_tick = 0;
                         wish_speed = f32::min(wish_speed, controller.air_speed_cap);
                         accelerate(wish_dir, wish_speed, controller.air_accel, dt, &mut end_vel);
-                        end_vel.z -= controller.gravity * dt;
-                        let air_speed = end_vel.xy().length();
+                        end_vel.y -= controller.gravity * dt;
+                        let air_speed = end_vel.xz().length();
                         if air_speed > controller.max_air_speed {
                             let ratio = controller.max_air_speed / air_speed;
                             end_vel.x *= ratio;
-                            end_vel.y *= ratio;
+                            end_vel.z *= ratio;
                         }
                     }
 

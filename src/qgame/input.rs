@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::f32::consts::FRAC_PI_2;
 
 use bevy::{
     asset::{AssetLoader, LoadContext, LoadedAsset},
@@ -103,15 +103,15 @@ pub fn player_input_system(
 
             let dt = time.delta_seconds();
             player_input.pitch = (player_input.pitch - mouse_delta.y * 0.5 * dt).clamp(
-                0.001953125,
-                PI - 0.001953125,
+                -FRAC_PI_2 + 0.001953125,
+                FRAC_PI_2 - 0.001953125,
             );
             player_input.yaw = player_input.yaw - mouse_delta.x * dt;
 
             player_input.movement = Vec3::new(
                 get_axis(&key_input, config.key_right, config.key_left),
-                get_axis(&key_input, config.key_forward, config.key_back),
                 get_axis(&key_input, config.key_up, config.key_down),
+                get_axis(&key_input, config.key_forward, config.key_back),
             );
             player_input.flags.clear();
             if key_input.pressed(config.key_sprint) {

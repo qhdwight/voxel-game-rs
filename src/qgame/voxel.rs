@@ -228,6 +228,7 @@ pub fn voxel_polygonize_system(
         };
 
         if !buffers.points.is_empty() {
+
             let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("simplex command encoder") });
             {
                 let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
@@ -241,8 +242,8 @@ pub fn voxel_polygonize_system(
             for z in 0..CHUNK_SZ {
                 for y in 0..CHUNK_SZ {
                     for x in 0..CHUNK_SZ {
-                        let noise01 = (buffers.heights.as_slice()[x + y * CHUNK_SZ] + 1.0) * 0.5;
-                        let height = noise01 * 4.0 + 8.0 - (z as f32);
+                        let noise01 = (buffers.heights.as_slice()[x + z * CHUNK_SZ] + 1.0) * 0.5;
+                        let height = noise01 * 4.0 + 8.0 - (y as f32);
                         let mut density = 0.0;
 
                         if height > 1.0 {
