@@ -1,10 +1,11 @@
-sensitivity = 0.5
+sensitivity = 0.001
 key_forward = "W"
 key_back = "S"
 key_left = "A"
 key_right = "D"
-key_up = "Q"
-key_down = "E"
+key_up = "Space"
+key_down = "LControl"
 key_sprint = "LShift"
 key_jump = "Space"
 key_crouch = "LControl"
+key_fly = "F"

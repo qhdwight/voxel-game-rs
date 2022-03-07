@@ -1,3 +1,4 @@
+use std::iter::once;
 use std::mem::size_of;
 
 use bevy::{
@@ -13,54 +14,45 @@ use bevy::{
 
 use crate::*;
 
-// use enumflags2::{bitflags, BitFlags};
+// use flagset::{flags, FlagSet};
 
 const CHUNK_SZ: usize = 32;
 const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
 const CHUNK_SZ_3: usize = CHUNK_SZ * CHUNK_SZ * CHUNK_SZ;
 
 #[derive(Component)]
-pub struct Voxels {
-    pub chunks: HashMap<IVec3, Vec<Voxel>>,
+pub struct Chunk {
+    pub position: IVec3,
+    pub voxels: Vec<Voxel>,
 }
 
-impl Default for Voxels {
-    #[inline]
-    fn default() -> Voxels {
-        let mut vec = Vec::with_capacity(CHUNK_SZ_3);
-        vec.resize(CHUNK_SZ_3, Voxel::default());
-        let mut chunks = HashMap::default();
-        chunks.insert(IVec3::ZERO, vec);
-        Voxels { chunks }
+#[derive(Component)]
+pub struct Map {
+    pub chunks: HashMap<IVec3, Entity>,
+}
+
+impl Default for Map {
+    fn default() -> Self {
+        Self {
+            chunks: HashMap::default(),
+        }
     }
 }
 
-// #[bitflags]
-// #[repr(u32)]
-// #[derive(Copy, Clone, PartialEq)]
-// enum VoxelProps {
-//     IsBlock,
+impl Chunk {
+    pub fn new(position: IVec3) -> Self {
+        let mut voxels = Vec::with_capacity(CHUNK_SZ_3);
+        voxels.resize(CHUNK_SZ_3, Voxel::default());
+        Self { position, voxels }
+    }
+}
+
+// flags! {
+//     #[repr(u32)]
+//     pub enum VoxelFlags: u32 {
+//         IsBlock,
+//     }
 // }
-//
-// struct VoxelFlags(BitFlags<VoxelProps>);
-//
-// impl Default for VoxelFlags {
-//     #[inline]
-//     fn default() -> VoxelFlags { VoxelFlags::zeroed() }
-// }
-//
-// unsafe impl Zeroable for VoxelFlags {
-//     #[inline]
-//     fn zeroed() -> Self { unsafe { std::mem::zeroed() } }
-// }
-//
-// impl Copy for VoxelFlags {}
-//
-// impl Clone for VoxelFlags { fn clone(&self) -> Self { *self } }
-//
-// unsafe impl Pod for VoxelFlags {}
-//
-//
 
 #[derive(Copy, Clone, Default, Pod, Zeroable)]
 #[repr(C)]
@@ -82,13 +74,14 @@ impl Plugin for VoxelsPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<VoxelsPipeline>()
-            .add_system_to_stage(CoreStage::PreUpdate, marching_cubes);
+            .add_system_to_stage(CoreStage::PreUpdate, voxel_polygonize_system);
     }
 }
 
 impl FromWorld for VoxelsPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
+        let asset_server = world.get_resource::<AssetServer>().unwrap();
 
         let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("edge table buffer"), contents: cast_slice(EDGE_TABLE), usage: BufferUsages::UNIFORM });
         let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("tri table buffer"), contents: cast_slice(TRI_TABLE), usage: BufferUsages::UNIFORM });
@@ -106,7 +99,8 @@ impl FromWorld for VoxelsPipeline {
         let indices: BufVec<u32> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 6 * 6, render_device);
         let atomics: BufVec<u32> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, 2, render_device);
 
-        let shader_source = include_str!("../../assets/simplex.wgsl");
+        // let simplex_shader = asset_server.load("shaders/simplex.wgsl");
+        let shader_source = include_str!("../../assets/shaders/simplex.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("simplex shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
@@ -131,7 +125,8 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        let shader_source = include_str!("../../assets/voxels.wgsl");
+        // let voxel_shader = asset_server.load("shaders/voxels.wgsl");
+        let shader_source = include_str!("../../assets/shaders/voxels.wgsl");
         let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
             label: Some("voxels shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
@@ -173,8 +168,20 @@ impl FromWorld for VoxelsPipeline {
     }
 }
 
-pub fn marching_cubes(
-    mut query: Query<(&Handle<Mesh>, &mut Voxels)>,
+pub fn sync_added_chunks_system(
+    added_chunk_query: Query<(Entity, &Chunk), Added<Chunk>>,
+    mut map_query: Query<&mut Map>,
+) {
+    for (chunk_entity, chunk) in added_chunk_query.iter() {
+        for mut map in map_query.iter_mut() {
+            map.chunks.insert(chunk.position, chunk_entity);
+        }
+    }
+}
+
+pub fn voxel_polygonize_system(
+    mut commands: Commands,
+    mut query: Query<(Entity, &Handle<Mesh>, Option<&mut ColliderShapeComponent>, &mut Chunk)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut buffers: ResMut<Buffers>,
     time: Res<Time>,
@@ -184,7 +191,7 @@ pub fn marching_cubes(
 ) {
     // let now = std::time::Instant::now();
 
-    for (mesh, mut voxels) in query.iter_mut() {
+    for (entity, mesh, mut collider, mut chunk) in query.iter_mut() {
         buffers.atomics.clear();
         buffers.atomics.push(0);
         buffers.atomics.push(0);
@@ -223,6 +230,8 @@ pub fn marching_cubes(
         };
 
         if !buffers.points.is_empty() {
+            buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
+
             let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("simplex command encoder") });
             {
                 let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
@@ -230,15 +239,16 @@ pub fn marching_cubes(
                 pass.set_bind_group(0, &binding_groups.simplex, &[]);
                 pass.dispatch((CHUNK_SZ / 32) as u32, (CHUNK_SZ / 32) as u32, 1);
             }
-            render_queue.submit(vec![command_encoder.finish()]);
+            render_queue.submit(once(command_encoder.finish()));
 
             buffers.heights.read_buffer(CHUNK_SZ_2, render_device.as_ref());
             for z in 0..CHUNK_SZ {
                 for y in 0..CHUNK_SZ {
                     for x in 0..CHUNK_SZ {
-                        let noise01 = (buffers.heights.as_slice()[x + y * CHUNK_SZ] + 1.0) * 0.5;
-                        let height = noise01 * 4.0 + 8.0 - (z as f32);
+                        let noise01 = (buffers.heights.as_slice()[x + z * CHUNK_SZ] + 1.0) * 0.5;
+                        let height = noise01 * 4.0 + 8.0 - (y as f32);
                         let mut density = 0.0;
+
                         if height > 1.0 {
                             density = 1.0;
                         } else if height > 0.0 {
@@ -248,19 +258,17 @@ pub fn marching_cubes(
                         //     flags: if z == (noise01 * 4.0) as usize { 1 } else { 0 },
                         //     density: 0.0,
                         // };
-                        voxels.chunks.get_mut(&IVec3::ZERO).unwrap()[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
+                        chunk.voxels[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
                             flags: 0,
                             density,
                         };
                     }
                 }
             }
-            // buffers.points.clear();
         }
 
-        buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
-        let range = 0..size_of::<Voxel>() * voxels.chunks[&IVec3::ZERO].len();
-        let bytes: &[u8] = cast_slice(&voxels.chunks[&IVec3::ZERO]);
+        let range = 0..size_of::<Voxel>() * chunk.voxels.len();
+        let bytes: &[u8] = cast_slice(&chunk.voxels);
         render_queue.write_buffer(&buffers.voxels, 0, &bytes[range]);
         buffers.atomics.write_buffer(render_device.as_ref(), render_queue.as_ref());
 
@@ -272,7 +280,7 @@ pub fn marching_cubes(
             let dispatch_size = (CHUNK_SZ / 8) as u32;
             pass.dispatch(dispatch_size, dispatch_size, dispatch_size);
         }
-        render_queue.submit(vec![command_encoder.finish()]);
+        render_queue.submit(once(command_encoder.finish()));
 
         buffers.atomics.read_buffer(2, render_device.as_ref());
         let vertex_count = buffers.atomics.as_slice()[0] as usize;
@@ -306,7 +314,29 @@ pub fn marching_cubes(
             uvs.clear();
             uvs.reserve(vertex_count);
             for v in buffers.uvs.iter() {
-                uvs.push([v[0], v[1]]);
+                uvs.push((*v).into());
+            }
+        }
+
+        if let Some(Indices::U32(indices)) = mesh.indices() {
+            if let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+                let vertices = vertices.iter().map(|v| (*v).into()).collect();
+                let indices = indices.chunks(3).map(|t| t.try_into().unwrap()).collect();
+                let shape: ColliderShapeComponent = ColliderShape::trimesh(vertices, indices).into();
+
+                if collider.is_none() {
+                    commands.entity(entity)
+                        .insert_bundle(ColliderBundle {
+                            shape,
+                            collider_type: ColliderType::Solid.into(),
+                            position: Vec3::new(0.0, 0.0, 0.0).into(),
+                            material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
+                            mass_properties: ColliderMassProps::Density(2.0).into(),
+                            ..Default::default()
+                        });
+                } else {
+                    commands.entity(entity).insert(shape);
+                }
             }
         }
     }

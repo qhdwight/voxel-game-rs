@@ -1,3 +1,7 @@
+extern crate core;
+
+use std::f32::consts::TAU;
+
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
@@ -6,6 +10,10 @@ use bevy::{
         render_resource::*,
     },
     window::WindowDescriptor,
+};
+use bevy_rapier3d::{
+    na::Point3,
+    prelude::*,
 };
 
 use qgame::*;
@@ -19,23 +27,36 @@ fn main() {
             title: String::from("QGame"),
             ..Default::default()
         })
+        .insert_resource(AmbientLight {
+            color: Color::WHITE,
+            brightness: 0.25,
+        })
         .add_plugins(DefaultPlugins)
+        .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugin(RapierRenderPlugin)
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_asset::<Config>()
         .init_asset_loader::<ConfigAssetLoader>()
-        .add_startup_system(setup)
-        .add_system_to_stage(CoreStage::PreUpdate, update_input)
-        .add_system(update_text)
-        .add_system(manage_inventory)
-        .add_system(camera_controller)
+        .add_startup_system(setup_system)
+        .add_system_to_stage(CoreStage::PreUpdate, player_input_system)
+        .add_system(cursor_grab_system)
+        .add_system(update_fps_text_system)
+        .add_system(manage_inventory_system)
+        .add_system_set(SystemSet::new()
+            .with_system(player_look_system)
+            .with_system(player_move_system)
+            // .with_system(player_narrow_phase_system)
+        )
+        .add_system_to_stage(CoreStage::PostUpdate, sync_player_camera_system)
+        .add_system_to_stage(CoreStage::PostUpdate, update_hud_system)
         .run();
 }
 
 #[derive(Component)]
 struct TextChanges;
 
-fn setup(
+fn setup_system(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -53,27 +74,45 @@ fn setup(
     mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, VertexAttributeValues::Float32x2(Vec::with_capacity(4096)));
     let mesh = meshes.add(mesh);
     let material = materials.add(StandardMaterial {
-        base_color: Color::RED,
+        base_color: Color::DARK_GREEN,
         ..Default::default()
     });
 
-    commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: Transform::from_xyz(-16.0, -16.0, 32.0),
-        // transform: Transform::from_xyz(-6.0, 6.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..Default::default()
-    })
-        .insert(PlayerInput::default())
-        .insert(CameraController::default());
+    commands.spawn_bundle(PerspectiveCameraBundle::new_3d());
 
-    commands.spawn_bundle(PointLightBundle {
-        point_light: PointLight {
-            intensity: 2000.0,
-            shadows_enabled: true,
+    commands.spawn()
+        .insert_bundle(ColliderBundle {
+            shape: ColliderShape::capsule(Point3::new(0.0, 0.5, 0.0), Point3::new(0.0, 1.5, 0.0), 0.5).into(),
+            collider_type: ColliderType::Solid.into(),
             ..Default::default()
-        },
-        transform: Transform::from_xyz(38.0, -34.0, 40.0),
-        ..Default::default()
-    });
+        })
+        .insert(ColliderDebugRender::with_id(0))
+        .insert_bundle(RigidBodyBundle {
+            body_type: RigidBodyType::Dynamic.into(),
+            position: Vec3::new(4.0, 24.0, 4.0).into(),
+            activation: RigidBodyActivation::cannot_sleep().into(),
+            mass_properties: RigidBodyMassPropsFlags::ROTATION_LOCKED.into(),
+            ccd: RigidBodyCcd { ccd_enabled: true, ..Default::default() }.into(),
+            ..Default::default()
+        })
+        .insert(PlayerInput {
+            pitch: -TAU / 12.0,
+            yaw: TAU * 5.0 / 8.0,
+            ..Default::default()
+        })
+        .insert(PlayerController {
+            ..Default::default()
+        });
+
+    // commands.spawn_bundle(PointLightBundle {
+    //     point_light: PointLight {
+    //         intensity: 2000.0,
+    //         shadows_enabled: true,
+    //         ..Default::default()
+    //     },
+    //     transform: Transform::from_xyz(38.0, -34.0, 40.0),
+    //     ..Default::default()
+    // });
 
     commands.spawn_bundle(DirectionalLightBundle {
         directional_light: DirectionalLight {
@@ -81,15 +120,49 @@ fn setup(
             shadows_enabled: true,
             ..Default::default()
         },
-        transform: Transform::from_xyz(-38.0, 34.0, 40.0),
+        transform: Transform::from_xyz(-38.0, 40.0, 34.0),
         ..Default::default()
     });
 
-    commands.spawn().insert(Voxels::default()).insert_bundle(PbrBundle {
-        mesh: mesh.clone(),
-        material: material.clone(),
-        ..Default::default()
-    });
+    {
+        let mesh = meshes.add(Mesh::from(bevy::prelude::shape::Cube { size: 1.0 }));
+        let material = materials.add(StandardMaterial {
+            base_color: Color::PINK,
+            ..Default::default()
+        });
+        commands.spawn()
+            .insert_bundle(PbrBundle {
+                mesh: mesh.clone(),
+                material: material.clone(),
+                transform: Transform::from_xyz(-18.0, 32.0, -18.0),
+                ..Default::default()
+            })
+            .insert_bundle(ColliderBundle {
+                shape: ColliderShape::cuboid(1.0, 1.0, 1.0).into(),
+                collider_type: ColliderType::Solid.into(),
+                position: Vec3::new(-18.0, 32.0, -18.0).into(),
+                ..Default::default()
+            });
+    }
+
+    commands.spawn().insert(Map::default());
+
+    commands.spawn()
+        .insert(Chunk::new(IVec3::ZERO))
+        // .insert_bundle(ColliderBundle {
+        //     shape: ColliderShape::trimesh(Vec::new(), Vec::new()).into(),
+        //     collider_type: ColliderType::Solid.into(),
+        //     position: Vec3::new(0.0, 0.0, 0.0).into(),
+        //     material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
+        //     mass_properties: ColliderMassProps::Density(2.0).into(),
+        //     ..Default::default()
+        // })
+        .insert(ColliderDebugRender::with_id(1))
+        .insert_bundle(PbrBundle {
+            mesh: mesh.clone(),
+            material: material.clone(),
+            ..Default::default()
+        });
 
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
     commands.spawn_bundle(UiCameraBundle::default());
@@ -109,11 +182,11 @@ fn setup(
                 sections: vec![
                     TextSection {
                         value: "".to_string(),
-                        style: TextStyle {
-                            font: font.clone(),
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                        },
+                        style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::WHITE },
+                    },
+                    TextSection {
+                        value: "".to_string(),
+                        style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::GRAY },
                     },
                 ],
                 alignment: Default::default(),
@@ -141,7 +214,7 @@ struct BindingGroups {
     voxels: BindGroup,
 }
 
-fn update_text(
+fn update_fps_text_system(
     time: Res<Time>,
     diagnostics: Res<Diagnostics>,
     mut query: Query<&mut Text, With<TextChanges>>,
@@ -162,5 +235,17 @@ fn update_text(
         }
 
         text.sections[0].value = format!("{:.1} fps, {:.3} ms/frame", fps, frame_time * 1000.0);
+    }
+}
+
+fn update_hud_system(
+    mut text_query: Query<&mut Text, With<TextChanges>>,
+    player_query: Query<&Transform, With<PerspectiveProjection>>,
+) {
+    for mut text in text_query.iter_mut() {
+        for transform in player_query.iter() {
+            let p = transform.translation;
+            text.sections[1].value = format!("\n[{:.2}, {:.2}, {:.2}]", p.x, p.y, p.z);
+        }
     }
 }
