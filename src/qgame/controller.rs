@@ -13,7 +13,6 @@ pub enum MoveMode {
 
 #[derive(Component)]
 pub struct PlayerController {
-    pub enabled: bool,
     pub move_mode: MoveMode,
     pub gravity: f32,
     pub walk_speed: f32,
@@ -41,7 +40,6 @@ impl Default for PlayerController {
     fn default() -> Self {
         Self {
             move_mode: MoveMode::Noclip,
-            enabled: true,
             fly_speed: 10.0,
             fast_fly_speed: 30.0,
             gravity: 23.0,
@@ -110,24 +108,22 @@ pub fn sync_player_camera_system(
     }
 }
 
-pub fn player_controller_system(
+pub fn player_move_system(
     time: Res<Time>,
     query_pipeline: Res<QueryPipeline>, collider_query: QueryPipelineColliderComponentsQuery,
     mut query: Query<(
-        Entity, &PlayerInput, &mut PlayerController, &ColliderShapeComponent, &mut RigidBodyPositionComponent
+        Entity, &PlayerInput, &mut PlayerController, &ColliderShapeComponent,
+        &RigidBodyPositionComponent, &mut RigidBodyVelocityComponent,
     )>,
 ) {
     let dt = time.delta_seconds();
 
-    for (entity, input, mut controller, collider, mut rb_position) in query.iter_mut() {
-        let input: &PlayerInput = input;
-        let mut controller: Mut<'_, PlayerController> = controller;
-        let collider: &ColliderShapeComponent = collider;
-        let mut rb_position: Mut<'_, RigidBodyPositionComponent> = rb_position;
-
-        if !controller.enabled {
-            continue;
-        }
+    for (entity, input, mut controller, collider, rb_position, mut rb_velocity) in query.iter_mut() {
+        // let input: &PlayerInput = input;
+        // let mut controller: Mut<'_, PlayerController> = controller;
+        // let collider: &ColliderShapeComponent = collider;
+        // let rb_position: &RigidBodyPositionComponent = rb_position;
+        // let mut rb_velocity: Mut<'_, RigidBodyVelocityComponent> = rb_velocity;
 
         if input.flags.contains(PlayerInputFlags::Fly) {
             controller.move_mode = match controller.move_mode {
@@ -157,12 +153,10 @@ pub fn player_controller_system(
                     };
                     controller.velocity = input.movement.normalize() * fly_speed;
                 }
-                let next_translation = pos
-                    + controller.velocity.x * dt * right
-                    + controller.velocity.y * dt * Vec3::Y
-                    + controller.velocity.z * dt * fwd;
-                let next_rot = Quat::from_axis_angle(Vec3::Z, input.yaw);
-                rb_position.next_position = (next_translation, next_rot).into();
+                let vel = controller.velocity.x * right
+                    + controller.velocity.y * Vec3::Y
+                    + controller.velocity.z * fwd;
+                rb_velocity.linvel = vel.into();
             }
 
             MoveMode::Ground => {
@@ -171,6 +165,7 @@ pub fn player_controller_system(
                     let mut end_vel = init_vel;
                     let lateral_speed = init_vel.xz().length();
 
+                    // Capsule cast downwards to find ground
                     let mut ground_hit = None;
                     let collider_set = QueryPipelineColliderComponentsSet(&collider_query);
                     let cast_capsule = Capsule::new(capsule.segment.a, capsule.segment.b, capsule.radius * 1.0625);
@@ -181,9 +176,9 @@ pub fn player_controller_system(
 
                     if let Some((handle, hit)) = query_pipeline.cast_shape(
                         &collider_set, &cast_pos, &cast_dir, &cast_capsule, max_dist, groups,
+                        // Filter to prevent self-collisions
                         Some(&|hit_collider| hit_collider.entity() != entity),
                     ) {
-                        // println!("Hit the entity {:?} with the configuration: {:?}", handle.entity(), hit);
                         ground_hit = Some(hit);
                     }
 
@@ -234,21 +229,66 @@ pub fn player_controller_system(
                         }
                     }
 
-                    let dp = (init_vel + end_vel) * 0.5 * dt;
-                    let mut next_translation = pos + dp;
                     // At this point our collider may be intersecting with the ground
                     // Fix up our collider by offsetting it to be flush with the ground
-                    if end_vel.y < 0.0 {
-                        if let Some(ground_hit) = ground_hit {
-                            let normal = Vec3::from(*ground_hit.normal2);
-                            next_translation += normal * ground_hit.toi;
-                        }
-                    }
-                    let next_rot = Quat::from_axis_angle(Vec3::Z, input.yaw);
-                    rb_position.next_position = (next_translation, next_rot).into();
+                    // if end_vel.y < -1e6 {
+                    //     if let Some(ground_hit) = ground_hit {
+                    //         let normal = Vec3::from(*ground_hit.normal2);
+                    //         next_translation += normal * ground_hit.toi;
+                    //     }
+                    // }
+                    let rb_vel = (init_vel + end_vel) * 0.5;
                     controller.velocity = end_vel;
+                    rb_velocity.linvel = rb_vel.into();
                 }
             }
         }
     }
 }
+
+// pub fn player_narrow_phase_system(
+//     narrow_phase: Res<NarrowPhase>,
+//     query: Query<Entity, With<PlayerController>>,
+// ) {
+//     for entity1 in query.iter() {
+//         for contact_pair in narrow_phase.contacts_with(entity1.handle()) {
+//             let entity2 = if contact_pair.collider1 == entity1.handle() {
+//                 contact_pair.collider2.entity()
+//             } else {
+//                 contact_pair.collider1.entity()
+//             };
+//
+//             /* Find the contact pair, if it exists, between two colliders. */
+//             if let Some(contact_pair) = narrow_phase.contact_pair(entity1.handle(), entity2.handle()) {
+//                 // The contact pair exists meaning that the broad-phase identified a potential contact.
+//                 if contact_pair.has_any_active_contact {
+//                     // The contact pair has active contacts, meaning that it
+//                     // contains contacts for which contact forces were computed.
+//                 }
+//
+//                 // We may also read the contact manifolds to access the contact geometry.
+//                 for manifold in &contact_pair.manifolds {
+//                     println!("Local-space contact normal: {}", manifold.local_n1);
+//                     println!("Local-space contact normal: {}", manifold.local_n2);
+//                     println!("World-space contact normal: {}", manifold.data.normal);
+//
+//                     // Read the geometric contacts.
+//                     for contact_point in &manifold.points {
+//                         // Keep in mind that all the geometric contact data are expressed in the local-space of the colliders.
+//                         println!("Found local contact point 1: {:?}", contact_point.local_p1);
+//                         println!("Found contact distance: {:?}", contact_point.dist); // Negative if there is a penetration.
+//                         println!("Found contact impulse: {}", contact_point.data.impulse);
+//                         println!("Found friction impulse: {}", contact_point.data.tangent_impulse);
+//                     }
+//
+//                     // Read the solver contacts.
+//                     for solver_contact in &manifold.data.solver_contacts {
+//                         // Keep in mind that all the solver contact data are expressed in world-space.
+//                         println!("Found solver contact point: {:?}", solver_contact.point);
+//                         println!("Found solver contact distance: {:?}", solver_contact.dist); // Negative if there is a penetration.
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }

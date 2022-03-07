@@ -45,7 +45,9 @@ fn main() {
         .add_system(manage_inventory_system)
         .add_system_set(SystemSet::new()
             .with_system(player_look_system)
-            .with_system(player_controller_system))
+            .with_system(player_move_system)
+            // .with_system(player_narrow_phase_system)
+        )
         .add_system_to_stage(CoreStage::PostUpdate, sync_player_camera_system)
         .add_system_to_stage(CoreStage::PostUpdate, update_hud_system)
         .run();
@@ -72,7 +74,7 @@ fn setup_system(
     mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, VertexAttributeValues::Float32x2(Vec::with_capacity(4096)));
     let mesh = meshes.add(mesh);
     let material = materials.add(StandardMaterial {
-        base_color: Color::RED,
+        base_color: Color::DARK_GREEN,
         ..Default::default()
     });
 
@@ -86,8 +88,11 @@ fn setup_system(
         })
         .insert(ColliderDebugRender::with_id(0))
         .insert_bundle(RigidBodyBundle {
-            body_type: RigidBodyType::KinematicPositionBased.into(),
+            body_type: RigidBodyType::Dynamic.into(),
             position: Vec3::new(4.0, 24.0, 4.0).into(),
+            activation: RigidBodyActivation::cannot_sleep().into(),
+            mass_properties: RigidBodyMassPropsFlags::ROTATION_LOCKED.into(),
+            ccd: RigidBodyCcd { ccd_enabled: true, ..Default::default() }.into(),
             ..Default::default()
         })
         .insert(PlayerInput {
