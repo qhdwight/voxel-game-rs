@@ -4,9 +4,7 @@ use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
     render::{
-        camera::CameraProjection,
         mesh::{Indices, VertexAttributeValues},
-        primitives::Frustum,
         render_resource::*,
     },
     window::WindowDescriptor,

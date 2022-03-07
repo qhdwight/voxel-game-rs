@@ -14,6 +14,7 @@ flags! {
     pub enum PlayerInputFlags: u32 {
         Jump,
         Sprint,
+        Fly,
     }
 }
 
@@ -37,6 +38,7 @@ pub struct Config {
     pub key_down: KeyCode,
     pub key_sprint: KeyCode,
     pub key_jump: KeyCode,
+    pub key_fly: KeyCode,
     pub key_crouch: KeyCode,
 }
 
@@ -51,6 +53,7 @@ impl Default for Config {
             key_down: KeyCode::E,
             key_sprint: KeyCode::LShift,
             key_jump: KeyCode::Space,
+            key_fly: KeyCode::F,
             key_crouch: KeyCode::LControl,
             sensitivity: 0.5,
         }
@@ -102,11 +105,11 @@ pub fn player_input_system(
             mouse_delta *= config.sensitivity;
 
             let dt = time.delta_seconds();
-            player_input.pitch = (player_input.pitch - mouse_delta.y * 0.5 * dt).clamp(
+            player_input.pitch = (player_input.pitch - mouse_delta.y).clamp(
                 -FRAC_PI_2 + 0.001953125,
                 FRAC_PI_2 - 0.001953125,
             );
-            player_input.yaw = player_input.yaw - mouse_delta.x * dt;
+            player_input.yaw = player_input.yaw - mouse_delta.x;
 
             player_input.movement = Vec3::new(
                 get_axis(&key_input, config.key_right, config.key_left),
@@ -116,6 +119,12 @@ pub fn player_input_system(
             player_input.flags.clear();
             if key_input.pressed(config.key_sprint) {
                 player_input.flags |= PlayerInputFlags::Sprint;
+            }
+            if key_input.pressed(config.key_jump) {
+                player_input.flags |= PlayerInputFlags::Jump;
+            }
+            if key_input.just_pressed(config.key_fly) {
+                player_input.flags |= PlayerInputFlags::Fly;
             }
         }
     }

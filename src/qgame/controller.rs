@@ -3,6 +3,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_rapier3d::prelude::*;
+use bevy_rapier3d::rapier::data::ComponentSet;
 
 use crate::{PlayerInput, PlayerInputFlags};
 
@@ -82,7 +83,7 @@ fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &m
     let accel_speed = f32::min(accel * wish_speed * dt, add_speed);
     let wish_dir = wish_dir * accel_speed;
     velocity.x += wish_dir.x;
-    velocity.z += wish_dir.y;
+    velocity.z += wish_dir.z;
 }
 
 pub fn player_look_system(
@@ -113,18 +114,28 @@ pub fn sync_camera_system(
 pub fn player_controller_system(
     time: Res<Time>,
     query_pipeline: Res<QueryPipeline>, collider_query: QueryPipelineColliderComponentsQuery,
-    mut query: Query<(&PlayerInput, &mut PlayerController, &ColliderShapeComponent, &mut RigidBodyPositionComponent)>,
+    mut query: Query<(
+        Entity, &PlayerInput, &mut PlayerController, &ColliderShapeComponent, &mut RigidBodyPositionComponent
+    )>,
 ) {
     let dt = time.delta_seconds();
 
-    for (input, mut controller, mut collider, mut rb_position) in query.iter_mut() {
+    for (entity, input, mut controller, collider, mut rb_position) in query.iter_mut() {
         if !controller.enabled {
             continue;
         }
 
-        // let input: &PlayerInput = input;
-        // let mut controller: Mut<'_, PlayerController> = controller;
-        // let mut rb_position: Mut<'_, RigidBodyPositionComponent> = rb_position;
+        let input: &PlayerInput = input;
+        let mut controller: Mut<'_, PlayerController> = controller;
+        let collider: &ColliderShapeComponent = collider;
+        let mut rb_position: Mut<'_, RigidBodyPositionComponent> = rb_position;
+
+        if input.flags.contains(PlayerInputFlags::Fly) {
+            controller.move_mode = match controller.move_mode {
+                MoveMode::Noclip => { MoveMode::Ground }
+                MoveMode::Ground => { MoveMode::Noclip }
+            }
+        }
 
         let rot = look_quat(input.pitch, input.yaw);
         let right = rot * Vec3::X;
@@ -163,23 +174,26 @@ pub fn player_controller_system(
 
                     let mut ground_hit = None;
                     let collider_set = QueryPipelineColliderComponentsSet(&collider_query);
-                    let shape = Capsule::new(capsule.segment.a, capsule.segment.b, capsule.radius * 1.0625);
-                    let shape_pos = (pos, rot).into();
-                    let shape_vel = Vec3::new(0.0, -0.125, 0.0).into();
-                    let max_toi = 4.0;
+                    let cast_capsule = Capsule::new(capsule.segment.a, capsule.segment.b, capsule.radius * 1.0625);
+                    let cast_pos = (pos, rot).into();
+                    let cast_dir = Vec3::new(0.0, -1.0, 0.0).into();
+                    let max_dist = 0.125;
                     let groups = InteractionGroups::all();
-                    let filter = None;
 
                     if let Some((handle, hit)) = query_pipeline.cast_shape(
-                        &collider_set, &shape_pos, &shape_vel, &shape, max_toi, groups, filter,
+                        &collider_set, &cast_pos, &cast_dir, &cast_capsule, max_dist, groups,
+                        Some(&|hit_collider| hit_collider.entity() != entity),
                     ) {
                         println!("Hit the entity {:?} with the configuration: {:?}", handle.entity(), hit);
                         ground_hit = Some(hit);
                     }
 
-                    let mut wish_dir = input.movement.y * controller.fwd_speed * fwd + input.movement.x * controller.side_speed * right;
+                    let mut wish_dir = input.movement.z * controller.fwd_speed * fwd
+                        + input.movement.x * controller.side_speed * right;
                     let mut wish_speed = wish_dir.length();
-                    wish_dir /= wish_speed; // effectively normalize, avoid length computation twice
+                    if wish_speed > 1e-6 { // Avoid division by zero
+                        wish_dir /= wish_speed; // Effectively normalize, avoid length computation twice
+                    }
 
                     let max_speed = if input.flags.contains(PlayerInputFlags::Sprint) {
                         controller.run_speed
@@ -189,13 +203,14 @@ pub fn player_controller_system(
 
                     wish_speed = f32::min(wish_speed, max_speed);
 
+                    let ground_dy = None; // Used to "stick" collider to the ground
                     if let Some(ground_hit) = ground_hit {
                         // Only apply friction after at least one tick, allows b-hopping without losing speed
                         if controller.ground_tick >= 1 {
                             if lateral_speed > controller.friction_cutoff {
                                 friction(lateral_speed, controller.friction, controller.stop_speed, dt, &mut end_vel);
                             } else {
-                                end_vel.z = 0.0;
+                                end_vel.y = 0.0;
                             }
                         }
                         accelerate(wish_dir, wish_speed, controller.accel, dt, &mut end_vel);
@@ -204,6 +219,7 @@ pub fn player_controller_system(
                             init_vel.y = controller.jump_speed;
                             end_vel.y = init_vel.y - controller.gravity * dt;
                         }
+                        // Increment ground tick but cap at max value
                         controller.ground_tick = controller.ground_tick.saturating_add(1);
                     } else {
                         controller.ground_tick = 0;
@@ -221,7 +237,6 @@ pub fn player_controller_system(
                     let dp = (init_vel + end_vel) * 0.5 * dt;
                     let next_translation = pos + dp;
                     let next_rot = Quat::from_axis_angle(Vec3::Z, input.yaw);
-                    println!("{:?}, {:?}", next_translation, next_rot);
                     rb_position.next_position = (next_translation, next_rot).into();
                     controller.velocity = end_vel;
                 }
