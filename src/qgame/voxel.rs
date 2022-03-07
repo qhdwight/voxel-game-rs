@@ -1,3 +1,4 @@
+use std::iter::once;
 use std::mem::size_of;
 
 use bevy::{
@@ -195,6 +196,7 @@ pub fn voxel_polygonize_system(
         buffers.atomics.push(0);
 
         let time = time.time_since_startup().as_secs_f32();
+        let time = 0.0;
         buffers.points.clear();
         for x in 0..CHUNK_SZ {
             for y in 0..CHUNK_SZ {
@@ -228,6 +230,7 @@ pub fn voxel_polygonize_system(
         };
 
         if !buffers.points.is_empty() {
+            buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
 
             let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("simplex command encoder") });
             {
@@ -236,7 +239,7 @@ pub fn voxel_polygonize_system(
                 pass.set_bind_group(0, &binding_groups.simplex, &[]);
                 pass.dispatch((CHUNK_SZ / 32) as u32, (CHUNK_SZ / 32) as u32, 1);
             }
-            render_queue.submit(vec![command_encoder.finish()]);
+            render_queue.submit(once(command_encoder.finish()));
 
             buffers.heights.read_buffer(CHUNK_SZ_2, render_device.as_ref());
             for z in 0..CHUNK_SZ {
@@ -262,10 +265,8 @@ pub fn voxel_polygonize_system(
                     }
                 }
             }
-            buffers.points.clear();
         }
 
-        buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
         let range = 0..size_of::<Voxel>() * chunk.voxels.len();
         let bytes: &[u8] = cast_slice(&chunk.voxels);
         render_queue.write_buffer(&buffers.voxels, 0, &bytes[range]);
@@ -279,7 +280,7 @@ pub fn voxel_polygonize_system(
             let dispatch_size = (CHUNK_SZ / 8) as u32;
             pass.dispatch(dispatch_size, dispatch_size, dispatch_size);
         }
-        render_queue.submit(vec![command_encoder.finish()]);
+        render_queue.submit(once(command_encoder.finish()));
 
         buffers.atomics.read_buffer(2, render_device.as_ref());
         let vertex_count = buffers.atomics.as_slice()[0] as usize;
@@ -313,7 +314,7 @@ pub fn voxel_polygonize_system(
             uvs.clear();
             uvs.reserve(vertex_count);
             for v in buffers.uvs.iter() {
-                uvs.push([v[0], v[1]]);
+                uvs.push((*v).into());
             }
         }
 

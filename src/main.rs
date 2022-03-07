@@ -1,3 +1,5 @@
+extern crate core;
+
 use std::f32::consts::TAU;
 
 use bevy::{
@@ -78,7 +80,7 @@ fn setup_system(
 
     commands.spawn()
         .insert_bundle(ColliderBundle {
-            shape: ColliderShape::capsule(Point3::new(0.0, 0.0, 0.5), Point3::new(0.0, 0.0, 1.5), 0.5).into(),
+            shape: ColliderShape::capsule(Point3::new(0.0, 0.5, 0.0), Point3::new(0.0, 1.5, 0.0), 0.5).into(),
             collider_type: ColliderType::Solid.into(),
             ..Default::default()
         })

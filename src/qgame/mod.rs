@@ -51,7 +51,7 @@ impl<T: Pod> BufVec<T> {
 
     pub fn with_capacity(buffer_usage: BufferUsages, capacity: usize, device: &RenderDevice) -> Self {
         let mut buffer = BufVec::new(buffer_usage);
-        buffer.reserve(capacity, device);
+        buffer.ensure_buf_cap(capacity, device);
         buffer
     }
 
@@ -81,7 +81,7 @@ impl<T: Pod> BufVec<T> {
         index
     }
 
-    pub fn reserve(&mut self, capacity: usize, device: &RenderDevice) {
+    fn ensure_buf_cap(&mut self, capacity: usize, device: &RenderDevice) {
         if capacity > self.capacity {
             self.capacity = capacity;
             let size = self.item_size * capacity;
@@ -98,7 +98,7 @@ impl<T: Pod> BufVec<T> {
         if self.values.is_empty() {
             return;
         }
-        self.reserve(self.values.len(), device);
+        self.ensure_buf_cap(self.values.len(), device);
         if let Some(buffer) = &self.buffer {
             let range = 0..self.item_size * self.values.len();
             let bytes: &[u8] = cast_slice(&self.values);
@@ -108,17 +108,13 @@ impl<T: Pod> BufVec<T> {
 
     pub fn read_buffer(&mut self, len: usize, device: &RenderDevice)
     {
-        if self.values.is_empty() {
-            self.reserve(len, device);
-        }
-        if let Some(buffer) = &self.buffer {
-            self.values.resize(len, T::zeroed());
-            let buffer_slice = &buffer.slice(..);
-            device.map_buffer(buffer_slice, MapMode::Read);
-            let range = 0..self.item_size * len;
-            self.values.copy_from_slice(cast_slice(&buffer_slice.get_mapped_range()[range]));
-            buffer.unmap();
-        }
+        let buffer = self.buffer.as_ref().expect("Buffer is not initialized");
+        self.values.resize(len, T::zeroed());
+        let buffer_slice = &buffer.slice(..);
+        device.map_buffer(buffer_slice, MapMode::Read);
+        let range = 0..self.item_size * len;
+        self.values.copy_from_slice(cast_slice(&buffer_slice.get_mapped_range()[range]));
+        buffer.unmap();
     }
 
     pub fn as_slice(&self) -> &[T] {
