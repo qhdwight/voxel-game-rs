@@ -11,9 +11,10 @@ use bevy::{
     },
     utils::HashMap,
 };
-// use flagset::{flags, FlagSet};
 
 use crate::*;
+
+// use flagset::{flags, FlagSet};
 
 const CHUNK_SZ: usize = 32;
 const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
@@ -196,7 +197,6 @@ pub fn voxel_polygonize_system(
         buffers.atomics.push(0);
 
         let time = time.time_since_startup().as_secs_f32();
-        let time = 0.0;
         buffers.points.clear();
         for x in 0..CHUNK_SZ {
             for y in 0..CHUNK_SZ {
@@ -318,20 +318,24 @@ pub fn voxel_polygonize_system(
             }
         }
 
-        if collider.is_none() {
-            if let Some(Indices::U32(indices)) = mesh.indices() {
-                if let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
-                    let vertices = vertices.iter().map(|v| (*v).into()).collect();
-                    let indices = indices.chunks(3).map(|t| t.try_into().unwrap()).collect();
+        if let Some(Indices::U32(indices)) = mesh.indices() {
+            if let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+                let vertices = vertices.iter().map(|v| (*v).into()).collect();
+                let indices = indices.chunks(3).map(|t| t.try_into().unwrap()).collect();
+                let shape: ColliderShapeComponent = ColliderShape::trimesh(vertices, indices).into();
+
+                if collider.is_none() {
                     commands.entity(entity)
                         .insert_bundle(ColliderBundle {
-                            shape: ColliderShape::trimesh(vertices, indices).into(),
+                            shape,
                             collider_type: ColliderType::Solid.into(),
                             position: Vec3::new(0.0, 0.0, 0.0).into(),
                             material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
                             mass_properties: ColliderMassProps::Density(2.0).into(),
                             ..Default::default()
                         });
+                } else {
+                    commands.entity(entity).insert(shape);
                 }
             }
         }
