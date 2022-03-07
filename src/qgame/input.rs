@@ -89,27 +89,29 @@ pub fn cursor_grab_system(
 }
 
 pub fn player_input_system(
-    time: Res<Time>,
     key_input: Res<Input<KeyCode>>,
     config: Res<Assets<Config>>,
     config_handle: Res<Handle<Config>>,
+    mut windows: ResMut<Windows>,
     mut mouse_events: EventReader<MouseMotion>,
     mut query: Query<&mut PlayerInput>)
 {
     if let Some(config) = config.get(config_handle.as_ref()) {
         for mut player_input in query.iter_mut() {
-            let mut mouse_delta = Vec2::ZERO;
-            for mouse_event in mouse_events.iter() {
-                mouse_delta += mouse_event.delta;
-            }
-            mouse_delta *= config.sensitivity;
+            let window = windows.get_primary_mut().unwrap();
+            if window.is_focused() {
+                let mut mouse_delta = Vec2::ZERO;
+                for mouse_event in mouse_events.iter() {
+                    mouse_delta += mouse_event.delta;
+                }
+                mouse_delta *= config.sensitivity;
 
-            // let dt = time.delta_seconds();
-            player_input.pitch = (player_input.pitch - mouse_delta.y).clamp(
-                -FRAC_PI_2 + 0.001953125,
-                FRAC_PI_2 - 0.001953125,
-            );
-            player_input.yaw = player_input.yaw - mouse_delta.x;
+                player_input.pitch = (player_input.pitch - mouse_delta.y).clamp(
+                    -FRAC_PI_2 + 0.001953125,
+                    FRAC_PI_2 - 0.001953125,
+                );
+                player_input.yaw = player_input.yaw - mouse_delta.x;
+            }
 
             player_input.movement = Vec3::new(
                 get_axis(&key_input, config.key_right, config.key_left),
