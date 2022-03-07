@@ -104,7 +104,7 @@ pub fn player_input_system(
             }
             mouse_delta *= config.sensitivity;
 
-            let dt = time.delta_seconds();
+            // let dt = time.delta_seconds();
             player_input.pitch = (player_input.pitch - mouse_delta.y).clamp(
                 -FRAC_PI_2 + 0.001953125,
                 FRAC_PI_2 - 0.001953125,

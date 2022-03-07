@@ -39,12 +39,13 @@ fn main() {
         .add_startup_system(setup_system)
         .add_system_to_stage(CoreStage::PreUpdate, player_input_system)
         .add_system(cursor_grab_system)
-        .add_system(update_text_system)
+        .add_system(update_fps_text_system)
         .add_system(manage_inventory_system)
         .add_system_set(SystemSet::new()
             .with_system(player_look_system)
             .with_system(player_controller_system))
-        .add_system_to_stage(CoreStage::PostUpdate, sync_camera_system)
+        .add_system_to_stage(CoreStage::PostUpdate, sync_player_camera_system)
+        .add_system_to_stage(CoreStage::PostUpdate, update_hud_system)
         .run();
 }
 
@@ -79,14 +80,12 @@ fn setup_system(
         .insert_bundle(ColliderBundle {
             shape: ColliderShape::capsule(Point3::new(0.0, 0.0, 0.5), Point3::new(0.0, 0.0, 1.5), 0.5).into(),
             collider_type: ColliderType::Solid.into(),
-            material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
-            mass_properties: ColliderMassProps::Density(2.0).into(),
             ..Default::default()
         })
         .insert(ColliderDebugRender::with_id(0))
         .insert_bundle(RigidBodyBundle {
             body_type: RigidBodyType::KinematicPositionBased.into(),
-            position: Vec3::new(-16.0, 32.0, -16.0).into(),
+            position: Vec3::new(4.0, 24.0, 4.0).into(),
             ..Default::default()
         })
         .insert(PlayerInput {
@@ -124,12 +123,19 @@ fn setup_system(
             base_color: Color::PINK,
             ..Default::default()
         });
-        commands.spawn_bundle(PbrBundle {
-            mesh: mesh.clone(),
-            material: material.clone(),
-            transform: Transform::from_xyz(-18.0, 32.0, -18.0),
-            ..Default::default()
-        });
+        commands.spawn()
+            .insert_bundle(PbrBundle {
+                mesh: mesh.clone(),
+                material: material.clone(),
+                transform: Transform::from_xyz(-18.0, 32.0, -18.0),
+                ..Default::default()
+            })
+            .insert_bundle(ColliderBundle {
+                shape: ColliderShape::cuboid(1.0, 1.0, 1.0).into(),
+                collider_type: ColliderType::Solid.into(),
+                position: Vec3::new(-18.0, 32.0, -18.0).into(),
+                ..Default::default()
+            });
     }
 
     commands.spawn().insert(Map::default());
@@ -169,11 +175,11 @@ fn setup_system(
                 sections: vec![
                     TextSection {
                         value: "".to_string(),
-                        style: TextStyle {
-                            font: font.clone(),
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                        },
+                        style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::WHITE },
+                    },
+                    TextSection {
+                        value: "".to_string(),
+                        style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::GRAY },
                     },
                 ],
                 alignment: Default::default(),
@@ -201,7 +207,7 @@ struct BindingGroups {
     voxels: BindGroup,
 }
 
-fn update_text_system(
+fn update_fps_text_system(
     time: Res<Time>,
     diagnostics: Res<Diagnostics>,
     mut query: Query<&mut Text, With<TextChanges>>,
@@ -222,5 +228,17 @@ fn update_text_system(
         }
 
         text.sections[0].value = format!("{:.1} fps, {:.3} ms/frame", fps, frame_time * 1000.0);
+    }
+}
+
+fn update_hud_system(
+    mut text_query: Query<&mut Text, With<TextChanges>>,
+    player_query: Query<&Transform, With<PerspectiveProjection>>,
+) {
+    for mut text in text_query.iter_mut() {
+        for transform in player_query.iter() {
+            let p = transform.translation;
+            text.sections[1].value = format!("\n[{:.2}, {:.2}, {:.2}]", p.x, p.y, p.z);
+        }
     }
 }

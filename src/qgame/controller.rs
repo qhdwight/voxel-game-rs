@@ -3,7 +3,6 @@ use bevy::{
     prelude::*,
 };
 use bevy_rapier3d::prelude::*;
-use bevy_rapier3d::rapier::data::ComponentSet;
 
 use crate::{PlayerInput, PlayerInputFlags};
 
@@ -99,13 +98,13 @@ fn look_quat(pitch: f32, yaw: f32) -> Quat {
     return Quat::from_euler(EulerRot::ZYX, 0.0, yaw, pitch);
 }
 
-pub fn sync_camera_system(
+pub fn sync_player_camera_system(
     controller_query: Query<(&PlayerController, &RigidBodyPositionComponent)>,
     mut camera_query: Query<&mut Transform, With<PerspectiveProjection>>,
 ) {
     for (controller, rb_position) in controller_query.iter() {
         for mut transform in camera_query.iter_mut() {
-            transform.translation = rb_position.position.translation.into();
+            transform.translation = Vec3::from(rb_position.position.translation) + Vec3::new(0.0, 2.0, 0.0);
             transform.rotation = look_quat(controller.pitch, controller.yaw);
         }
     }
@@ -121,14 +120,14 @@ pub fn player_controller_system(
     let dt = time.delta_seconds();
 
     for (entity, input, mut controller, collider, mut rb_position) in query.iter_mut() {
-        if !controller.enabled {
-            continue;
-        }
-
         let input: &PlayerInput = input;
         let mut controller: Mut<'_, PlayerController> = controller;
         let collider: &ColliderShapeComponent = collider;
         let mut rb_position: Mut<'_, RigidBodyPositionComponent> = rb_position;
+
+        if !controller.enabled {
+            continue;
+        }
 
         if input.flags.contains(PlayerInputFlags::Fly) {
             controller.move_mode = match controller.move_mode {
@@ -152,9 +151,9 @@ pub fn player_controller_system(
                     }
                 } else {
                     let fly_speed = if input.flags.contains(PlayerInputFlags::Sprint) {
-                        controller.fly_speed
-                    } else {
                         controller.fast_fly_speed
+                    } else {
+                        controller.fly_speed
                     };
                     controller.velocity = input.movement.normalize() * fly_speed;
                 }
@@ -184,7 +183,7 @@ pub fn player_controller_system(
                         &collider_set, &cast_pos, &cast_dir, &cast_capsule, max_dist, groups,
                         Some(&|hit_collider| hit_collider.entity() != entity),
                     ) {
-                        println!("Hit the entity {:?} with the configuration: {:?}", handle.entity(), hit);
+                        // println!("Hit the entity {:?} with the configuration: {:?}", handle.entity(), hit);
                         ground_hit = Some(hit);
                     }
 
@@ -203,15 +202,16 @@ pub fn player_controller_system(
 
                     wish_speed = f32::min(wish_speed, max_speed);
 
-                    let ground_dy = None; // Used to "stick" collider to the ground
                     if let Some(ground_hit) = ground_hit {
                         // Only apply friction after at least one tick, allows b-hopping without losing speed
                         if controller.ground_tick >= 1 {
                             if lateral_speed > controller.friction_cutoff {
                                 friction(lateral_speed, controller.friction, controller.stop_speed, dt, &mut end_vel);
                             } else {
-                                end_vel.y = 0.0;
+                                end_vel.x = 0.0;
+                                end_vel.z = 0.0;
                             }
+                            end_vel.y = 0.0;
                         }
                         accelerate(wish_dir, wish_speed, controller.accel, dt, &mut end_vel);
                         if input.flags.contains(PlayerInputFlags::Jump) {
@@ -235,7 +235,15 @@ pub fn player_controller_system(
                     }
 
                     let dp = (init_vel + end_vel) * 0.5 * dt;
-                    let next_translation = pos + dp;
+                    let mut next_translation = pos + dp;
+                    // At this point our collider may be intersecting with the ground
+                    // Fix up our collider by offsetting it to be flush with the ground
+                    if end_vel.y < 0.0 {
+                        if let Some(ground_hit) = ground_hit {
+                            let normal = Vec3::from(*ground_hit.normal2);
+                            next_translation += normal * ground_hit.toi;
+                        }
+                    }
                     let next_rot = Quat::from_axis_angle(Vec3::Z, input.yaw);
                     rb_position.next_position = (next_translation, next_rot).into();
                     controller.velocity = end_vel;

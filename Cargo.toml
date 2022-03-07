@@ -8,7 +8,7 @@ edition = "2021"
 anyhow = "1.0.55"
 bevy = { version = "0.6.1", features = ["serialize"] }
 bevy_rapier3d = { version = "0.12.1", features = ["enhanced-determinism", "serde-serialize", "render"] }
-bytemuck = "1.7.2"
+bytemuck = "1.8.0"
 flagset = "0.4.3"
 serde = "1.0.136"
 toml = "0.5.8"
