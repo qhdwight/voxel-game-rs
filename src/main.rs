@@ -44,9 +44,9 @@ fn main() {
         .add_system(update_fps_text_system)
         .add_system(manage_inventory_system)
         .add_system_set(SystemSet::new()
-            .with_system(player_look_system)
-            .with_system(player_move_system)
-            // .with_system(player_narrow_phase_system)
+                            .with_system(player_look_system)
+                            .with_system(player_move_system)
+                        // .with_system(player_narrow_phase_system)
         )
         .add_system_to_stage(CoreStage::PostUpdate, sync_player_camera_system)
         .add_system_to_stage(CoreStage::PostUpdate, update_hud_system)
@@ -72,8 +72,8 @@ fn setup_system(
     mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(Vec::with_capacity(4096)));
     mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, VertexAttributeValues::Float32x3(Vec::with_capacity(4096)));
     mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, VertexAttributeValues::Float32x2(Vec::with_capacity(4096)));
-    let mesh = meshes.add(mesh);
-    let material = materials.add(StandardMaterial {
+    let mesh_handle = meshes.add(mesh);
+    let ground_mat_handle = materials.add(StandardMaterial {
         base_color: Color::DARK_GREEN,
         ..Default::default()
     });
@@ -159,10 +159,23 @@ fn setup_system(
         // })
         .insert(ColliderDebugRender::with_id(1))
         .insert_bundle(PbrBundle {
-            mesh: mesh.clone(),
-            material: material.clone(),
+            mesh: mesh_handle.clone(),
+            material: ground_mat_handle.clone(),
             ..Default::default()
         });
+
+    let rifle_handle = asset_server.load("models/M4.gltf#Mesh0/Primitive0");
+    let rifle_mat_handle = materials.add(StandardMaterial {
+        base_color: Color::DARK_GRAY,
+        metallic: 0.05,
+        perceptual_roughness: 0.1,
+        ..Default::default()
+    });
+    commands.spawn_bundle(PbrBundle {
+        mesh: rifle_handle.clone(),
+        material: rifle_mat_handle.clone(),
+        ..Default::default()
+    });
 
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
     commands.spawn_bundle(UiCameraBundle::default());
@@ -194,6 +207,8 @@ fn setup_system(
             ..Default::default()
         })
         .insert(TextChanges);
+
+    asset_server.watch_for_changes().unwrap()
 }
 
 pub struct Buffers {

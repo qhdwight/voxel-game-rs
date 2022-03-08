@@ -40,6 +40,8 @@ pub struct Config {
     pub key_jump: KeyCode,
     pub key_fly: KeyCode,
     pub key_crouch: KeyCode,
+    pub key_fire: KeyCode,
+    pub key_reload: KeyCode,
 }
 
 impl Default for Config {
@@ -55,7 +57,9 @@ impl Default for Config {
             key_jump: KeyCode::Space,
             key_fly: KeyCode::F,
             key_crouch: KeyCode::LControl,
+            key_fire: KeyCode::Q,
             sensitivity: 0.5,
+            key_reload: KeyCode::R,
         }
     }
 }
