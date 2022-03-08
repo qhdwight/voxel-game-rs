@@ -124,26 +124,26 @@ fn setup_system(
         ..Default::default()
     });
 
-    {
-        let mesh = meshes.add(Mesh::from(bevy::prelude::shape::Cube { size: 1.0 }));
-        let material = materials.add(StandardMaterial {
-            base_color: Color::PINK,
-            ..Default::default()
-        });
-        commands.spawn()
-            .insert_bundle(PbrBundle {
-                mesh: mesh.clone(),
-                material: material.clone(),
-                transform: Transform::from_xyz(-18.0, 32.0, -18.0),
-                ..Default::default()
-            })
-            .insert_bundle(ColliderBundle {
-                shape: ColliderShape::cuboid(1.0, 1.0, 1.0).into(),
-                collider_type: ColliderType::Solid.into(),
-                position: Vec3::new(-18.0, 32.0, -18.0).into(),
-                ..Default::default()
-            });
-    }
+    // {
+    //     let mesh = meshes.add(Mesh::from(bevy::prelude::shape::Cube { size: 1.0 }));
+    //     let material = materials.add(StandardMaterial {
+    //         base_color: Color::PINK,
+    //         ..Default::default()
+    //     });
+    //     commands.spawn()
+    //         .insert_bundle(PbrBundle {
+    //             mesh: mesh.clone(),
+    //             material: material.clone(),
+    //             transform: Transform::from_xyz(-18.0, 32.0, -18.0),
+    //             ..Default::default()
+    //         })
+    //         .insert_bundle(ColliderBundle {
+    //             shape: ColliderShape::cuboid(1.0, 1.0, 1.0).into(),
+    //             collider_type: ColliderType::Solid.into(),
+    //             position: Vec3::new(-18.0, 32.0, -18.0).into(),
+    //             ..Default::default()
+    //         });
+    // }
 
     commands.spawn().insert(Map::default());
 
@@ -212,6 +212,8 @@ fn setup_system(
 }
 
 pub struct Buffers {
+    // Place edge table and triangle table in uniform buffer
+    // They are too large to have inline in the shader
     edge_table: Buffer,
     tri_table: Buffer,
     points: BufVec<Vec2>,

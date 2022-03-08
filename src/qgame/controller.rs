@@ -127,8 +127,8 @@ pub fn player_move_system(
 
         if input.flags.contains(PlayerInputFlags::Fly) {
             controller.move_mode = match controller.move_mode {
-                MoveMode::Noclip => { MoveMode::Ground }
-                MoveMode::Ground => { MoveMode::Noclip }
+                MoveMode::Noclip => MoveMode::Ground,
+                MoveMode::Ground => MoveMode::Noclip
             }
         }
 
