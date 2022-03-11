@@ -42,11 +42,11 @@ fn main() {
         .add_system_to_stage(CoreStage::PreUpdate, player_input_system)
         .add_system(cursor_grab_system)
         .add_system(update_fps_text_system)
-        .add_system(manage_inventory_system)
         .add_system_set(SystemSet::new()
-                            .with_system(player_look_system)
-                            .with_system(player_move_system)
-                        // .with_system(player_narrow_phase_system)
+            .with_system(modify_equip_state_system)
+            .with_system(modify_item_system)
+            .with_system(player_look_system)
+            .with_system(player_move_system)
         )
         .add_system_to_stage(CoreStage::PostUpdate, sync_player_camera_system)
         .add_system_to_stage(CoreStage::PostUpdate, update_hud_system)
@@ -102,7 +102,11 @@ fn setup_system(
         })
         .insert(PlayerController {
             ..Default::default()
+        })
+        .insert(Inventory {
+            ..Default::default()
         });
+
 
     // commands.spawn_bundle(PointLightBundle {
     //     point_light: PointLight {

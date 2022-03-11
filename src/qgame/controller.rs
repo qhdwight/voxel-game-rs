@@ -93,7 +93,7 @@ pub fn player_look_system(
 }
 
 fn look_quat(pitch: f32, yaw: f32) -> Quat {
-    return Quat::from_euler(EulerRot::ZYX, 0.0, yaw, pitch);
+    Quat::from_euler(EulerRot::ZYX, 0.0, yaw, pitch)
 }
 
 pub fn sync_player_camera_system(

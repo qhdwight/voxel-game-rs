@@ -24,6 +24,7 @@ pub struct PlayerInput {
     pub flags: FlagSet<PlayerInputFlags>,
     pub yaw: f32,
     pub pitch: f32,
+    pub wanted_item_slot: Option<u8>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, TypeUuid)]
