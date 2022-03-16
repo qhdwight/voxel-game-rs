@@ -304,9 +304,8 @@ fn update_hud_system(
         for inv in inv_query.iter() {
             let text = &mut text.sections[2].value;
             text.clear();
-            for item_ent in inv.item_ents.0.iter() {
-                if let Some(item_ent) = item_ent {
-                    let item = item_query.get_mut(*item_ent).unwrap();
+            for item_ent in 0..inv.item_ents.0.len() {
+                if let Some(item) = inv.get_item(item_ent, item_ent) {
                     write!(text, "\n{}", item.name).unwrap();
                 }
             }

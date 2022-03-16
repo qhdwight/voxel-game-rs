@@ -181,9 +181,9 @@ pub fn player_move_sys(
                         // Filter to prevent self-collisions
                         Some(&|hit_collider| {
                             let hit_ent = hit_collider.entity();
-                            hit_ent != entity && {
-                                let collider_type = collider_type_query.get(hit_ent).unwrap();
-                                collider_type.0 == ColliderType::Solid
+                            hit_ent != entity && match collider_type_query.get(hit_ent) {
+                                Ok(collider_type) => collider_type.0 == ColliderType::Solid,
+                                Err(_) => false
                             }
                         }),
                     ) {

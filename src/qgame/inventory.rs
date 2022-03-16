@@ -62,8 +62,7 @@ pub struct ItemPickup {
 }
 
 #[derive(Component, Default)]
-pub struct ItemPickupVisual {
-}
+pub struct ItemPickupVisual {}
 
 #[derive(Component)]
 pub struct Gun {
@@ -95,6 +94,30 @@ impl Default for Inventory {
 }
 
 impl Inventory {
+    fn get_item_mut(&self, mut item_query: &mut Query<&mut Item>, slot: u8) -> Option<Mut<Item>> {
+        match self.item_ents.0[slot as usize] {
+            Some(item_ent) => {
+                match item_query.get_mut(item_ent) {
+                    Ok(item) => Some(item),
+                    Err(_) => None,
+                }
+            }
+            None => None,
+        }
+    }
+
+    pub fn get_item(&self, item_query: &Query<&Item>, slot: u8) -> Option<&Item> {
+        match self.item_ents.0[slot as usize] {
+            Some(item_ent) => {
+                match item_query.get(item_ent) {
+                    Ok(item) => Some(item),
+                    Err(_) => None,
+                }
+            }
+            None => None,
+        }
+    }
+
     fn start_item_state(&self, mut item: Mut<Item>, state: ItemStateName, dur: Duration) {
         item.state_name = state;
         item.state_dur = dur;
@@ -103,7 +126,7 @@ impl Inventory {
         }
     }
 
-    fn find_replacement(&self, mut item_query: &Query<&mut Item>) -> Option<u8> {
+    fn find_replacement(&self, mut item_query: &Query<&Item>) -> Option<u8> {
         if self.prev_equipped_slot.is_none() {
             self.find_item(item_query, |item| item.is_none())
         } else {
@@ -112,16 +135,13 @@ impl Inventory {
     }
 
     fn find_item(
-        &self, mut item_query: &Query<&mut Item>, predicate: impl Fn(Option<&Item>) -> bool,
+        &self, mut item_query: &Query<&Item>, predicate: impl Fn(Option<&Item>) -> bool,
     ) -> Option<u8> {
         for (slot, &item_ent) in self.item_ents.0.iter().enumerate() {
-            let item = if let Some(item_ent) = item_ent {
-                Some(item_query.get(item_ent).unwrap())
-            } else {
-                None
-            };
+            let slot = slot as u8;
+            let item = self.get_item(item_query, slot);
             if predicate(item) {
-                return Some(slot as u8);
+                return Some(slot);
             }
         }
         None
@@ -161,7 +181,8 @@ pub fn modify_equip_state_sys(
     time: Res<Time>,
     asset_server: Res<AssetServer>,
     mut inv_query: Query<(&PlayerInput, &mut Inventory)>,
-    mut item_query: Query<&mut Item>,
+    mut item_query: Query<&Item>,
+    mut item_query_mut: Query<&mut Item>,
 ) {
     // let item_handles = asset_server.load_folder("items").unwrap();
 
@@ -256,7 +277,6 @@ pub fn item_pickup_sys(
             pickup_ent = Some(ent2);
             player_ent = Some(ent1);
         }
-        println!("{:?} {:?}", pickup_ent, player_ent);
         if let Some(pickup_ent) = pickup_ent {
             if let Some(player_ent) = player_ent {
                 let mut pickup = pickup_query.get_mut(pickup_ent).unwrap();
