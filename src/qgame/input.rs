@@ -77,7 +77,7 @@ fn get_axis(key_input: &Res<Input<KeyCode>>, key_pos: KeyCode, key_neg: KeyCode)
     get_pressed(key_input, key_pos) - get_pressed(key_input, key_neg)
 }
 
-pub fn cursor_grab_system(
+pub fn cursor_grab_sys(
     mut windows: ResMut<Windows>,
     btn: Res<Input<MouseButton>>,
     key: Res<Input<KeyCode>>,
@@ -154,6 +154,6 @@ impl AssetLoader for ConfigAssetLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["toml"]
+        &["config.toml"]
     }
 }

@@ -1,12 +1,14 @@
 use std::{
+    f32::consts::TAU,
     option::Option,
     time::Duration,
 };
 
 use bevy::{
     prelude::*,
+    utils::HashMap,
 };
-use bevy::utils::HashMap;
+use bevy_rapier3d::prelude::*;
 
 use crate::PlayerInput;
 
@@ -55,12 +57,21 @@ pub struct Item {
 }
 
 #[derive(Component)]
+pub struct ItemPickup {
+    pub item_name: ItemName,
+}
+
+#[derive(Component, Default)]
+pub struct ItemPickupVisual {
+}
+
+#[derive(Component)]
 pub struct Gun {
     pub ammo: u16,
     pub ammo_in_reserve: u16,
 }
 
-pub struct Items([Option<Entity>; 10]);
+pub struct Items(pub [Option<Entity>; 10]);
 
 #[derive(Component)]
 pub struct Inventory {
@@ -116,15 +127,16 @@ impl Inventory {
         None
     }
 
-    fn insert_item(
-        &mut self, inv_ent: Entity,
+    pub fn insert_item(
+        &mut self,
+        inv_ent: Entity,
         commands: &mut Commands,
         mut item_query: &mut Query<&mut Item>,
         item_name: ItemName, slot: u8,
-    ) {
-        let existing_itme_ent = self.item_ents.0[slot as usize];
-        if let Some(existing_itme_ent) = existing_itme_ent {
-            commands.entity(existing_itme_ent).despawn()
+    ) -> &mut Self {
+        let existing_item_ent = self.item_ents.0[slot as usize];
+        if let Some(existing_item_ent) = existing_item_ent {
+            commands.entity(existing_item_ent).despawn()
         }
         let item_ent = commands.spawn()
             .insert(Item {
@@ -141,16 +153,17 @@ impl Inventory {
             self.equip_state_name = EQUIPPING_STATE;
         }
         self.item_ents.0[slot as usize] = Some(item_ent);
+        self
     }
 }
 
-pub fn modify_equip_state_system(
+pub fn modify_equip_state_sys(
     time: Res<Time>,
     asset_server: Res<AssetServer>,
     mut inv_query: Query<(&PlayerInput, &mut Inventory)>,
     mut item_query: Query<&mut Item>,
 ) {
-    let item_handles = asset_server.load_folder("items").unwrap();
+    // let item_handles = asset_server.load_folder("items").unwrap();
 
     for (input, mut inv) in inv_query.iter_mut() {
         let input: &PlayerInput = input;
@@ -189,7 +202,7 @@ pub fn modify_equip_state_system(
     }
 }
 
-pub fn modify_item_system(
+pub fn modify_item_sys(
     time: Res<Time>,
     mut item_query: Query<&mut Item>,
     inv_query: Query<&Inventory>,
@@ -211,4 +224,59 @@ pub fn modify_item_system(
     }
 }
 
-fn set_item_at_index() {}
+pub fn item_pickup_sys(
+    mut commands: Commands,
+    // query_pipeline: Res<QueryPipeline>,
+    // collider_query: QueryPipelineColliderComponentsQuery,
+    // mut inv_query: Query<(&mut Inventory, &ColliderShapeComponent)>,
+    mut intersection_events: EventReader<IntersectionEvent>,
+    mut inv_query: Query<&mut Inventory>,
+    mut item_query: Query<&mut Item>,
+    mut pickup_query: Query<&mut ItemPickup>,
+) {
+    // TODO:design use shape cast instead of reading events?
+    // let collider_set = QueryPipelineColliderComponentsSet(&collider_query);
+    //
+    // for (mut inv, player_collider) in inv_query.iter_mut() {
+    //     let mut inv: Mut<'_, Inventory> = inv;
+    //     let player_collider: &ColliderShapeComponent = player_collider;
+    //
+    //     query_pipeline.intersections_with_shape(&collider_set, )
+    // }
+    for intersection_event in intersection_events.iter() {
+        let intersection: &IntersectionEvent = intersection_event;
+        let ent1 = intersection.collider1.entity();
+        let ent2 = intersection.collider2.entity();
+        let mut pickup_ent: Option<Entity> = None;
+        let mut player_ent: Option<Entity> = None;
+        if pickup_query.get(ent1).is_ok() && inv_query.get(ent2).is_ok() {
+            pickup_ent = Some(ent1);
+            player_ent = Some(ent2);
+        } else if pickup_query.get(ent2).is_ok() && inv_query.get(ent1).is_ok() {
+            pickup_ent = Some(ent2);
+            player_ent = Some(ent1);
+        }
+        println!("{:?} {:?}", pickup_ent, player_ent);
+        if let Some(pickup_ent) = pickup_ent {
+            if let Some(player_ent) = player_ent {
+                let mut pickup = pickup_query.get_mut(pickup_ent).unwrap();
+                let mut inv = inv_query.get_mut(player_ent).unwrap();
+                println!("Inserting");
+                inv.insert_item(player_ent, &mut commands, &mut item_query, pickup.item_name, 0);
+            }
+        }
+    }
+}
+
+pub fn item_pickup_animate_sys(
+    time: Res<Time>,
+    mut pickup_query: Query<&mut Transform, With<ItemPickupVisual>>,
+) {
+    for mut transform in pickup_query.iter_mut() {
+        let dr = TAU * time.delta_seconds() * 0.125;
+        transform.rotate(Quat::from_axis_angle(Vec3::Y, dr));
+        let height = f32::sin(time.time_since_startup().as_secs_f32()) * 0.125;
+        transform.translation = Vec3::new(0.0, height, 0.0);
+    }
+}
+

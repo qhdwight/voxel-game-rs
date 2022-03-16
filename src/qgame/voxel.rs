@@ -318,27 +318,28 @@ pub fn voxel_polygonize_system(
             }
         }
 
-        if let Some(Indices::U32(indices)) = mesh.indices() {
-            if let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
-                let vertices = vertices.iter().map(|v| (*v).into()).collect();
-                let indices = indices.chunks(3).map(|t| t.try_into().unwrap()).collect();
-                let shape: ColliderShapeComponent = ColliderShape::trimesh(vertices, indices).into();
-
-                if collider.is_none() {
-                    commands.entity(entity)
-                        .insert_bundle(ColliderBundle {
-                            shape,
-                            collider_type: ColliderType::Solid.into(),
-                            position: Vec3::new(0.0, 0.0, 0.0).into(),
-                            material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
-                            mass_properties: ColliderMassProps::Density(2.0).into(),
-                            ..Default::default()
-                        });
-                } else {
-                    commands.entity(entity).insert(shape);
-                }
-            }
-        }
+        // // TODO:perf inefficient
+        // if let Some(Indices::U32(indices)) = mesh.indices() {
+        //     if let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+        //         let vertices = vertices.iter().map(|v| (*v).into()).collect();
+        //         let indices = indices.chunks(3).map(|t| t.try_into().unwrap()).collect();
+        //         let shape: ColliderShapeComponent = ColliderShape::trimesh(vertices, indices).into();
+        //
+        //         if collider.is_none() {
+        //             commands.entity(entity)
+        //                 .insert_bundle(ColliderBundle {
+        //                     shape,
+        //                     collider_type: ColliderType::Solid.into(),
+        //                     position: Vec3::new(0.0, 0.0, 0.0).into(),
+        //                     material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
+        //                     mass_properties: ColliderMassProps::Density(2.0).into(),
+        //                     ..Default::default()
+        //                 });
+        //         } else {
+        //             commands.entity(entity).insert(shape);
+        //         }
+        //     }
+        // }
     }
 
     // println!("Elapsed: {:.2?}", now.elapsed());

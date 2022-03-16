@@ -83,7 +83,7 @@ fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &m
     velocity.z += wish_dir.z;
 }
 
-pub fn player_look_system(
+pub fn player_look_sys(
     mut query: Query<(&mut PlayerController, &PlayerInput)>
 ) {
     for (mut controller, input) in query.iter_mut() {
@@ -108,9 +108,11 @@ pub fn sync_player_camera_system(
     }
 }
 
-pub fn player_move_system(
+pub fn player_move_sys(
     time: Res<Time>,
-    query_pipeline: Res<QueryPipeline>, collider_query: QueryPipelineColliderComponentsQuery,
+    query_pipeline: Res<QueryPipeline>,
+    collider_query: QueryPipelineColliderComponentsQuery,
+    collider_type_query: Query<&ColliderTypeComponent>,
     mut query: Query<(
         Entity, &PlayerInput, &mut PlayerController, &ColliderShapeComponent,
         &RigidBodyPositionComponent, &mut RigidBodyVelocityComponent,
@@ -177,7 +179,13 @@ pub fn player_move_system(
                     if let Some((handle, hit)) = query_pipeline.cast_shape(
                         &collider_set, &cast_pos, &cast_dir, &cast_capsule, max_dist, groups,
                         // Filter to prevent self-collisions
-                        Some(&|hit_collider| hit_collider.entity() != entity),
+                        Some(&|hit_collider| {
+                            let hit_ent = hit_collider.entity();
+                            hit_ent != entity && {
+                                let collider_type = collider_type_query.get(hit_ent).unwrap();
+                                collider_type.0 == ColliderType::Solid
+                            }
+                        }),
                     ) {
                         ground_hit = Some(hit);
                     }
