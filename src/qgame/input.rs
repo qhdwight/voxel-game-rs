@@ -134,6 +134,9 @@ pub fn player_input_system(
                 player_input.flags |= PlayerInputFlags::Fly;
             }
             if key_input.pressed(KeyCode::Key1) {
+                player_input.wanted_item_slot = Some(0);
+            }
+            if key_input.pressed(KeyCode::Key2) {
                 player_input.wanted_item_slot = Some(1);
             }
         }

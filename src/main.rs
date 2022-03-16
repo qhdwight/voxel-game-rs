@@ -322,7 +322,7 @@ fn update_hud_system(
         text.clear();
         for transform in player_query.iter() {
             let p = transform.translation;
-            write!(text, "\n[{:.2}, {:.2}, {:.2}]", p.x, p.y, p.z).unwrap();
+            write!(text, "Position {{ {:.2}, {:.2}, {:.2} }}", p.x, p.y, p.z).unwrap();
         }
         for inv in inv_query.iter() {
             write!(text, "\n{:?}", inv).unwrap();

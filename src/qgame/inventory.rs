@@ -62,7 +62,7 @@ pub struct ItemPickup {
 }
 
 #[derive(Component, Default)]
-pub struct ItemPickupVisual {}
+pub struct ItemPickupVisual;
 
 #[derive(Component)]
 pub struct Gun {
@@ -87,7 +87,7 @@ impl Default for Inventory {
         Self {
             equipped_slot: None,
             prev_equipped_slot: None,
-            equip_state_name: EQUIPPING_STATE.clone(),
+            equip_state_name: UNEQUIPPED_STATE.clone(),
             equip_state_dur: Duration::ZERO,
             item_ents: Items([None; 10]),
         }
@@ -129,7 +129,7 @@ impl Inventory {
 
     fn find_replacement(&self, item_query: &Query<&Item>) -> Option<u8> {
         if self.prev_equipped_slot.is_none() {
-            self.find_item(item_query, |item| item.is_none())
+            self.find_item(item_query, |item| item.is_some())
         } else {
             self.prev_equipped_slot
         }
@@ -193,16 +193,17 @@ pub fn modify_equip_state_sys(
         let input: &PlayerInput = input;
         let mut inv: Mut<'_, Inventory> = inv;
 
-        let has_valid_wanted = inv.equipped_slot.is_some();
-        let is_alr_unequipping = inv.equip_state_name == UNEQUIPPED_STATE;
+        let has_valid_wanted = input.wanted_item_slot.is_some()
+            && inv.item_ents.0[inv.equipped_slot.unwrap() as usize].is_some();
+        let is_alr_unequipping = inv.equip_state_name == UNEQUIPPING_STATE;
         if has_valid_wanted && input.wanted_item_slot != inv.equipped_slot && !is_alr_unequipping {
-            inv.equip_state_name = UNEQUIPPED_STATE;
+            inv.equip_state_name = UNEQUIPPING_STATE;
             inv.equip_state_dur = Duration::ZERO;
         }
         if inv.equipped_slot.is_none() { return; }
 
         inv.equip_state_dur = inv.equip_state_dur.saturating_add(time.delta());
-        while inv.equip_state_dur > Duration::from_millis(100) {
+        while inv.equip_state_dur > Duration::from_millis(2000) {
             match inv.equip_state_name {
                 EQUIPPING_STATE => {
                     inv.equip_state_name = EQUIPPED_STATE;
@@ -212,7 +213,7 @@ pub fn modify_equip_state_sys(
                 }
                 _ => {}
             }
-            inv.equip_state_dur = inv.equip_state_dur.saturating_sub(Duration::from_millis(100));
+            inv.equip_state_dur = inv.equip_state_dur.saturating_sub(Duration::from_millis(2000));
         }
 
         if inv.equip_state_name != UNEQUIPPED_STATE { return; }
@@ -235,14 +236,14 @@ pub fn modify_item_sys(
         let is_equipped = inv_query.get(item.inv_ent).unwrap().equipped_slot == Some(item.inv_slot);
         if is_equipped {
             item.state_dur = item.state_dur.saturating_add(time.delta());
-            while item.state_dur > Duration::from_millis(100) {
+            while item.state_dur > Duration::from_millis(2000) {
                 match item.state_name {
-                    RELOAD_STATE | FIRE_STATE => {
+                    IDLE_STATE | RELOAD_STATE | FIRE_STATE => {
                         item.state_name = IDLE_STATE;
                     }
                     _ => unimplemented!()
                 }
-                item.state_dur = item.state_dur.saturating_sub(Duration::from_millis(100));
+                item.state_dur = item.state_dur.saturating_sub(Duration::from_millis(2000));
             }
         }
     }
