@@ -46,7 +46,7 @@ pub struct GunProps {
     pub starting_ammo_in_reserve: u16,
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Item {
     pub name: ItemName,
     pub amount: u16,
@@ -70,9 +70,10 @@ pub struct Gun {
     pub ammo_in_reserve: u16,
 }
 
+#[derive(Debug)]
 pub struct Items(pub [Option<Entity>; 10]);
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Inventory {
     pub equipped_slot: Option<u8>,
     pub prev_equipped_slot: Option<u8>,
@@ -94,29 +95,29 @@ impl Default for Inventory {
 }
 
 impl Inventory {
-    fn get_item_mut(&self, mut item_query: &mut Query<&mut Item>, slot: u8) -> Option<Mut<Item>> {
-        match self.item_ents.0[slot as usize] {
-            Some(item_ent) => {
-                match item_query.get_mut(item_ent) {
-                    Ok(item) => Some(item),
-                    Err(_) => None,
-                }
-            }
-            None => None,
-        }
-    }
-
-    pub fn get_item(&self, item_query: &Query<&Item>, slot: u8) -> Option<&Item> {
-        match self.item_ents.0[slot as usize] {
-            Some(item_ent) => {
-                match item_query.get(item_ent) {
-                    Ok(item) => Some(item),
-                    Err(_) => None,
-                }
-            }
-            None => None,
-        }
-    }
+    // fn get_item_mut(&self, mut item_query: &mut Query<&mut Item>, slot: u8) -> Option<Mut<Item>> {
+    //     match self.item_ents.0[slot as usize] {
+    //         Some(item_ent) => {
+    //             match item_query.get_mut(item_ent) {
+    //                 Ok(item) => Some(item),
+    //                 Err(_) => None,
+    //             }
+    //         }
+    //         None => None,
+    //     }
+    // }
+    //
+    // pub fn get_item(&self, item_query: &Query<&Item>, slot: u8) -> Option<&Item> {
+    //     match self.item_ents.0[slot as usize] {
+    //         Some(item_ent) => {
+    //             match item_query.get(item_ent) {
+    //                 Ok(item) => Some(item),
+    //                 Err(_) => None,
+    //             }
+    //         }
+    //         None => None,
+    //     }
+    // }
 
     fn start_item_state(&self, mut item: Mut<Item>, state: ItemStateName, dur: Duration) {
         item.state_name = state;
@@ -126,7 +127,7 @@ impl Inventory {
         }
     }
 
-    fn find_replacement(&self, mut item_query: &Query<&Item>) -> Option<u8> {
+    fn find_replacement(&self, item_query: &Query<&Item>) -> Option<u8> {
         if self.prev_equipped_slot.is_none() {
             self.find_item(item_query, |item| item.is_none())
         } else {
@@ -139,7 +140,10 @@ impl Inventory {
     ) -> Option<u8> {
         for (slot, &item_ent) in self.item_ents.0.iter().enumerate() {
             let slot = slot as u8;
-            let item = self.get_item(item_query, slot);
+            let item = match item_ent {
+                Some(item_ent) => item_query.get(item_ent),
+                None => Err(bevy::ecs::query::QueryEntityError::NoSuchEntity),
+            }.ok();
             if predicate(item) {
                 return Some(slot);
             }
@@ -181,8 +185,7 @@ pub fn modify_equip_state_sys(
     time: Res<Time>,
     asset_server: Res<AssetServer>,
     mut inv_query: Query<(&PlayerInput, &mut Inventory)>,
-    mut item_query: Query<&Item>,
-    mut item_query_mut: Query<&mut Item>,
+    item_query: Query<&Item>,
 ) {
     // let item_handles = asset_server.load_folder("items").unwrap();
 
@@ -281,8 +284,8 @@ pub fn item_pickup_sys(
             if let Some(player_ent) = player_ent {
                 let mut pickup = pickup_query.get_mut(pickup_ent).unwrap();
                 let mut inv = inv_query.get_mut(player_ent).unwrap();
-                println!("Inserting");
                 inv.insert_item(player_ent, &mut commands, &mut item_query, pickup.item_name, 0);
+                // commands.entity(pickup_ent).despawn_recursive();
             }
         }
     }

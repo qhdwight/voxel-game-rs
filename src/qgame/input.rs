@@ -133,6 +133,9 @@ pub fn player_input_system(
             if key_input.just_pressed(config.key_fly) {
                 player_input.flags |= PlayerInputFlags::Fly;
             }
+            if key_input.pressed(KeyCode::Key1) {
+                player_input.wanted_item_slot = Some(1);
+            }
         }
     }
 }

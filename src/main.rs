@@ -42,6 +42,7 @@ fn main() {
         .add_asset::<Config>()
         .init_asset_loader::<ConfigAssetLoader>()
         .add_startup_system(setup_sys)
+        .add_startup_system(spawn_ui_sys)
         .add_startup_system(spawn_voxel_sys)
         .add_startup_system(spawn_player_sys)
         .add_system_to_stage(CoreStage::PreUpdate, player_input_system)
@@ -65,12 +66,14 @@ fn main() {
 }
 
 #[derive(Component)]
-struct TextChanges;
+struct TopRightText;
+
+#[derive(Component)]
+struct PlayerHudText;
 
 fn setup_sys(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // println!("{}", toml::to_string(&Config::default()).unwrap());
@@ -147,8 +150,13 @@ fn setup_sys(
         .insert(ItemPickup { item_name: "M4" })
         .insert(ColliderPositionSync::Discrete);
 
+    asset_server.watch_for_changes().unwrap()
+}
+
+fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
     commands.spawn_bundle(UiCameraBundle::default());
+
     commands
         .spawn_bundle(TextBundle {
             style: Style {
@@ -167,22 +175,37 @@ fn setup_sys(
                         value: "".to_string(),
                         style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::WHITE },
                     },
+                ],
+                alignment: Default::default(),
+            },
+            ..Default::default()
+        })
+        .insert(TopRightText);
+
+    commands
+        .spawn_bundle(TextBundle {
+            style: Style {
+                align_self: AlignSelf::FlexEnd,
+                position_type: PositionType::Absolute,
+                position: Rect {
+                    bottom: Val::Px(5.0),
+                    left: Val::Px(5.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            text: Text {
+                sections: vec![
                     TextSection {
                         value: "".to_string(),
-                        style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::GRAY },
-                    },
-                    TextSection {
-                        value: "".to_string(),
-                        style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::ANTIQUE_WHITE },
+                        style: TextStyle { font: font.clone(), font_size: 12.0, color: Color::ANTIQUE_WHITE },
                     },
                 ],
                 alignment: Default::default(),
             },
             ..Default::default()
         })
-        .insert(TextChanges);
-
-    asset_server.watch_for_changes().unwrap()
+        .insert(PlayerHudText);
 }
 
 fn spawn_voxel_sys(
@@ -265,7 +288,7 @@ struct BindingGroups {
 fn update_fps_text_sys(
     time: Res<Time>,
     diagnostics: Res<Diagnostics>,
-    mut query: Query<&mut Text, With<TextChanges>>,
+    mut query: Query<&mut Text, With<TopRightText>>,
 ) {
     for mut text in query.iter_mut() {
         let mut fps = 0.0;
@@ -289,24 +312,25 @@ fn update_fps_text_sys(
 }
 
 fn update_hud_system(
-    mut text_query: Query<&mut Text, With<TextChanges>>,
+    mut text_query: Query<&mut Text, With<PlayerHudText>>,
     player_query: Query<&Transform, With<PerspectiveProjection>>,
     mut item_query: Query<&mut Item>,
     inv_query: Query<&Inventory>,
 ) {
     for mut text in text_query.iter_mut() {
+        let text = &mut text.sections[0].value;
+        text.clear();
         for transform in player_query.iter() {
             let p = transform.translation;
-            let text = &mut text.sections[1].value;
-            text.clear();
-            write!(text, "\n[{:.2}, {:.2}, {:.2}]", p.x, p.y, p.z);
+            write!(text, "\n[{:.2}, {:.2}, {:.2}]", p.x, p.y, p.z).unwrap();
         }
         for inv in inv_query.iter() {
-            let text = &mut text.sections[2].value;
-            text.clear();
-            for item_ent in 0..inv.item_ents.0.len() {
-                if let Some(item) = inv.get_item(item_ent, item_ent) {
-                    write!(text, "\n{}", item.name).unwrap();
+            write!(text, "\n{:?}", inv).unwrap();
+            for i in 0..inv.item_ents.0.len() {
+                if let Some(item_ent) = inv.item_ents.0[i] {
+                    if let Ok(item) = item_query.get_mut(item_ent) {
+                        write!(text, "\n{:?}", *item).unwrap();
+                    }
                 }
             }
         }
