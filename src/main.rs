@@ -313,9 +313,9 @@ fn update_fps_text_sys(
 
 fn update_hud_system(
     mut text_query: Query<&mut Text, With<PlayerHudText>>,
-    player_query: Query<&Transform, With<PerspectiveProjection>>,
+    player_query: Query<(&Transform), With<PerspectiveProjection>>,
     mut item_query: Query<&mut Item>,
-    inv_query: Query<&Inventory>,
+    inv_query: Query<(&Inventory, &PlayerInput)>,
 ) {
     for mut text in text_query.iter_mut() {
         let text = &mut text.sections[0].value;
@@ -324,7 +324,8 @@ fn update_hud_system(
             let p = transform.translation;
             write!(text, "Position {{ {:.2}, {:.2}, {:.2} }}", p.x, p.y, p.z).unwrap();
         }
-        for inv in inv_query.iter() {
+        for (inv, input) in inv_query.iter() {
+            write!(text, "\n{:?}", input).unwrap();
             write!(text, "\n{:?}", inv).unwrap();
             for i in 0..inv.item_ents.0.len() {
                 if let Some(item_ent) = inv.item_ents.0[i] {

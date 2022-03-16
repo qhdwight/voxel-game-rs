@@ -18,7 +18,7 @@ flags! {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
 pub struct PlayerInput {
     pub movement: Vec3,
     pub flags: FlagSet<PlayerInputFlags>,
@@ -138,6 +138,9 @@ pub fn player_input_system(
             }
             if key_input.pressed(KeyCode::Key2) {
                 player_input.wanted_item_slot = Some(1);
+            }
+            if key_input.pressed(KeyCode::Key3) {
+                player_input.wanted_item_slot = Some(2);
             }
         }
     }

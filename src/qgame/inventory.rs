@@ -3,6 +3,7 @@ use std::{
     option::Option,
     time::Duration,
 };
+use std::ops::Deref;
 
 use bevy::{
     prelude::*,
@@ -127,16 +128,16 @@ impl Inventory {
         }
     }
 
-    fn find_replacement(&self, item_query: &Query<&Item>) -> Option<u8> {
+    fn find_replacement(&self, item_query: &mut Query<&mut Item>) -> Option<u8> {
         if self.prev_equipped_slot.is_none() {
-            self.find_item(item_query, |item| item.is_some())
+            self.find_slot(item_query, |item| item.is_some())
         } else {
             self.prev_equipped_slot
         }
     }
 
-    fn find_item(
-        &self, mut item_query: &Query<&Item>, predicate: impl Fn(Option<&Item>) -> bool,
+    fn find_slot(
+        &self, item_query: &mut Query<&mut Item>, predicate: impl Fn(Option<&Item>) -> bool,
     ) -> Option<u8> {
         for (slot, &item_ent) in self.item_ents.0.iter().enumerate() {
             let slot = slot as u8;
@@ -152,6 +153,19 @@ impl Inventory {
     }
 
     pub fn insert_item(
+        &mut self,
+        inv_ent: Entity,
+        commands: &mut Commands,
+        mut item_query: &mut Query<&mut Item>,
+        item_name: ItemName,
+    ) {
+        let open_slot = self.find_slot(item_query, |item| item.is_none());
+        if let Some(open_slot) = open_slot {
+            self.set_item(inv_ent, commands, item_query, item_name, open_slot);
+        }
+    }
+
+    pub fn set_item(
         &mut self,
         inv_ent: Entity,
         commands: &mut Commands,
@@ -185,7 +199,7 @@ pub fn modify_equip_state_sys(
     time: Res<Time>,
     asset_server: Res<AssetServer>,
     mut inv_query: Query<(&PlayerInput, &mut Inventory)>,
-    item_query: Query<&Item>,
+    mut item_query: Query<&mut Item>,
 ) {
     // let item_handles = asset_server.load_folder("items").unwrap();
 
@@ -194,7 +208,9 @@ pub fn modify_equip_state_sys(
         let mut inv: Mut<'_, Inventory> = inv;
 
         let has_valid_wanted = input.wanted_item_slot.is_some()
-            && inv.item_ents.0[inv.equipped_slot.unwrap() as usize].is_some();
+            && inv.item_ents.0[input.wanted_item_slot.unwrap() as usize].is_some();
+
+        // Handle unequipping current item
         let is_alr_unequipping = inv.equip_state_name == UNEQUIPPING_STATE;
         if has_valid_wanted && input.wanted_item_slot != inv.equipped_slot && !is_alr_unequipping {
             inv.equip_state_name = UNEQUIPPING_STATE;
@@ -202,6 +218,7 @@ pub fn modify_equip_state_sys(
         }
         if inv.equipped_slot.is_none() { return; }
 
+        // Handle finishing equip status
         inv.equip_state_dur = inv.equip_state_dur.saturating_add(time.delta());
         while inv.equip_state_dur > Duration::from_millis(2000) {
             match inv.equip_state_name {
@@ -218,12 +235,14 @@ pub fn modify_equip_state_sys(
 
         if inv.equip_state_name != UNEQUIPPED_STATE { return; }
 
+        // We have unequipped the last slot, so we need to starting equipping the new slot
         if has_valid_wanted {
             inv.prev_equipped_slot = inv.equipped_slot;
             inv.equipped_slot = input.wanted_item_slot;
         } else {
-            inv.equipped_slot = inv.find_replacement(&item_query);
+            inv.equipped_slot = inv.find_replacement(&mut item_query);
         }
+        inv.equip_state_name = EQUIPPING_STATE;
     }
 }
 
@@ -285,7 +304,7 @@ pub fn item_pickup_sys(
             if let Some(player_ent) = player_ent {
                 let mut pickup = pickup_query.get_mut(pickup_ent).unwrap();
                 let mut inv = inv_query.get_mut(player_ent).unwrap();
-                inv.insert_item(player_ent, &mut commands, &mut item_query, pickup.item_name, 0);
+                inv.insert_item(player_ent, &mut commands, &mut item_query, pickup.item_name);
                 // commands.entity(pickup_ent).despawn_recursive();
             }
         }
