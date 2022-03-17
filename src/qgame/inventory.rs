@@ -6,16 +6,19 @@ use std::{
 use std::ops::MulAssign;
 
 use bevy::{
+    asset::{AssetLoader, LoadContext, LoadedAsset},
     core_pipeline::node::MAIN_PASS_DEPENDENCIES,
     pbr::{DrawMesh, MeshPipeline, MeshPipelineKey, SetMeshBindGroup, SetMeshViewBindGroup},
     prelude::*,
+    reflect::TypeUuid,
     render::{RenderApp, RenderStage},
     render::render_graph::RenderGraph,
     render::render_phase::{EntityRenderCommand, SetItemPipeline},
     render::render_resource::{RenderPipelineDescriptor, SpecializedPipeline},
-    utils::HashMap,
+    utils::{BoxedFuture, HashMap},
 };
 use bevy_rapier3d::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{DefaultMaterials, PlayerInput};
 
@@ -31,11 +34,14 @@ type ItemName = &'static str;
 type ItemStateName = &'static str;
 type EquipStateName = &'static str;
 
+#[derive(Serialize, Deserialize)]
 pub struct ItemStateProps {
     pub duration: Duration,
     pub is_persistent: bool,
 }
 
+#[derive(Serialize, Deserialize, TypeUuid)]
+#[uuid = "2cc54620-95c6-4522-b40e-0a4991ebae5f"]
 pub struct ItemProps {
     pub name: ItemName,
     pub move_factor: f32,
@@ -43,14 +49,20 @@ pub struct ItemProps {
     pub equip_states: HashMap<EquipStateName, ItemStateProps>,
 }
 
+#[derive(Serialize, Deserialize, TypeUuid)]
+#[uuid = "46e9c7af-27c2-4560-86e7-df48f9e84729"]
 pub struct WeaponProps {
     pub damage: u16,
     pub headshot_factor: f32,
+    pub item_props: ItemProps,
 }
 
+#[derive(Serialize, Deserialize, TypeUuid)]
+#[uuid = "df56751c-7560-420d-b480-eb8fb6f9b9bf"]
 pub struct GunProps {
     pub mag_size: u16,
     pub starting_ammo_in_reserve: u16,
+    pub weapon_props: WeaponProps,
 }
 
 #[derive(Component, Debug)]
@@ -96,6 +108,27 @@ pub struct InventoryPlugin;
 
 impl Plugin for InventoryPlugin {
     fn build(&self, app: &mut App) {}
+}
+
+#[derive(Default)]
+pub struct ConfigAssetLoader;
+
+impl AssetLoader for ConfigAssetLoader {
+    fn load<'a>(
+        &'a self,
+        bytes: &'a [u8],
+        load_context: &'a mut LoadContext,
+    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+        Box::pin(async move {
+            let asset: GunProps = toml::from_slice(bytes)?;
+            load_context.set_default_asset(LoadedAsset::new(asset));
+            Ok(())
+        })
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["config.toml"]
+    }
 }
 
 // ███╗   ███╗ ██████╗ ██████╗ ██╗███████╗██╗   ██╗
@@ -232,30 +265,6 @@ impl Default for Inventory {
 }
 
 impl Inventory {
-    // fn get_item_mut(&self, mut item_query: &mut Query<&mut Item>, slot: u8) -> Option<Mut<Item>> {
-    //     match self.item_ents.0[slot as usize] {
-    //         Some(item_ent) => {
-    //             match item_query.get_mut(item_ent) {
-    //                 Ok(item) => Some(item),
-    //                 Err(_) => None,
-    //             }
-    //         }
-    //         None => None,
-    //     }
-    // }
-    //
-    // pub fn get_item(&self, item_query: &Query<&Item>, slot: u8) -> Option<&Item> {
-    //     match self.item_ents.0[slot as usize] {
-    //         Some(item_ent) => {
-    //             match item_query.get(item_ent) {
-    //                 Ok(item) => Some(item),
-    //                 Err(_) => None,
-    //             }
-    //         }
-    //         None => None,
-    //     }
-    // }
-
     fn start_item_state(&self, mut item: Mut<Item>, state: ItemStateName, dur: Duration) {
         item.state_name = state;
         item.state_dur = dur;
@@ -350,27 +359,20 @@ pub fn render_inventory_sys(
             if let Some(item_ent) = item {
                 if let Ok(item) = item_query.get(*item_ent) {
                     let is_equipped = inv.equipped_slot == Some(item.inv_slot);
+                    let mut transform = Transform::default();
+                    let mesh_handle = asset_server.load(format!("models/{}.gltf#Mesh0/Primitive0", item.name).as_str());
                     if is_equipped {
-                        let mesh_handle = asset_server.load(format!("models/{}.gltf#Mesh0/Primitive0", item.name).as_str());
-                        let mut transform = camera_query.single().clone();
+                        transform = camera_query.single().clone();
                         transform.translation += transform.rotation * Vec3::new(0.4, -0.3, -1.0);
                         transform.rotation.mul_assign(Quat::from_rotation_y(TAU / 2.0));
-                        let mut item_cmds = commands.entity(*item_ent);
-                        // commands.spawn_bundle(
-                        //     PbrBundle {
-                        //         mesh: mesh_handle.clone(),
-                        //         material: materials.gun_material.clone(),
-                        //         transform,
-                        //         ..Default::default()
-                        //     }
-                        // );
-                        item_cmds.insert_bundle(PbrBundle {
-                            mesh: mesh_handle.clone(),
-                            material: materials.gun_material.clone(),
-                            transform,
-                            ..Default::default()
-                        });
                     }
+                    commands.entity(*item_ent).insert_bundle(PbrBundle {
+                        mesh: mesh_handle.clone(),
+                        material: materials.gun_material.clone(),
+                        transform,
+                        visibility: Visibility { is_visible: is_equipped },
+                        ..Default::default()
+                    });
                 }
             }
         }

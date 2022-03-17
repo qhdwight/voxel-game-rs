@@ -77,7 +77,8 @@ fn main() {
         )
         .add_system(cursor_grab_sys)
         .add_system(update_fps_text_sys)
-        .add_system_set(SystemSet::new().label(Modify::Set)
+        .add_system_set(SystemSet::new()
+            .label(Modify::Set)
             .with_system(player_look_sys
                 .label(Modify::Look))
             .with_system(player_move_sys
@@ -89,7 +90,8 @@ fn main() {
             .with_system(item_pickup_sys
                 .label(Modify::Pickup).after(Modify::Item))
         )
-        .add_system_set(SystemSet::new().label(Render::Set).after(Modify::Set)
+        .add_system_set(SystemSet::new()
+            .label(Render::Set).after(Modify::Set)
             .with_system(item_pickup_animate_sys)
             .with_system(render_player_camera_sys
                 .label(Render::Look))
@@ -175,7 +177,7 @@ fn setup_sys(
             position: Vec3::new(8.0, 20.0, 8.0).into(),
             ..Default::default()
         })
-        .insert(ItemPickup { item_name: "Rifle" })
+        .insert(ItemPickup { item_name: "Rifle".to_owned() })
         .insert(ColliderPositionSync::Discrete);
 
     commands.insert_resource(DefaultMaterials { gun_material });
