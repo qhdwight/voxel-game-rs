@@ -12,14 +12,14 @@ use wgpu::{BufferUsages, MapMode};
 pub use controller::*;
 pub use input::*;
 pub use inventory::*;
-pub use lookup::*;
+pub(crate) use lookup::*;
 pub use voxel::*;
 
-mod input;
-mod voxel;
-mod lookup;
-mod inventory;
 mod controller;
+mod input;
+mod inventory;
+mod lookup;
+mod voxel;
 
 pub struct BufVec<T: Pod> {
     values: Vec<T>,

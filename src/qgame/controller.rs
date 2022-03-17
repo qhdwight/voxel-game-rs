@@ -64,24 +64,12 @@ impl Default for PlayerController {
     }
 }
 
-fn friction(lateral_speed: f32, friction: f32, stop_speed: f32, dt: f32, velocity: &mut Vec3) {
-    let control = f32::max(lateral_speed, stop_speed);
-    let drop = control * friction * dt;
-    let new_speed = f32::max((lateral_speed - drop) / lateral_speed, 0.0);
-    velocity.x *= new_speed;
-    velocity.z *= new_speed;
-}
-
-fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &mut Vec3) {
-    let vel_proj = Vec3::dot(*velocity, wish_dir);
-    let add_speed = wish_speed - vel_proj;
-    if add_speed <= 0.0 { return; }
-
-    let accel_speed = f32::min(accel * wish_speed * dt, add_speed);
-    let wish_dir = wish_dir * accel_speed;
-    velocity.x += wish_dir.x;
-    velocity.z += wish_dir.z;
-}
+// ███╗   ███╗ ██████╗ ██████╗ ██╗███████╗██╗   ██╗
+// ████╗ ████║██╔═══██╗██╔══██╗██║██╔════╝╚██╗ ██╔╝
+// ██╔████╔██║██║   ██║██║  ██║██║█████╗   ╚████╔╝
+// ██║╚██╔╝██║██║   ██║██║  ██║██║██╔══╝    ╚██╔╝
+// ██║ ╚═╝ ██║╚██████╔╝██████╔╝██║██║        ██║
+// ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝        ╚═╝
 
 pub fn player_look_sys(
     mut query: Query<(&mut PlayerController, &PlayerInput)>
@@ -89,22 +77,6 @@ pub fn player_look_sys(
     for (mut controller, input) in query.iter_mut() {
         controller.pitch = input.pitch;
         controller.yaw = input.yaw;
-    }
-}
-
-fn look_quat(pitch: f32, yaw: f32) -> Quat {
-    Quat::from_euler(EulerRot::ZYX, 0.0, yaw, pitch)
-}
-
-pub fn sync_player_camera_system(
-    controller_query: Query<(&PlayerController, &RigidBodyPositionComponent)>,
-    mut camera_query: Query<&mut Transform, With<PerspectiveProjection>>,
-) {
-    for (controller, rb_position) in controller_query.iter() {
-        for mut transform in camera_query.iter_mut() {
-            transform.translation = Vec3::from(rb_position.position.translation) + Vec3::new(0.0, 2.0, 0.0);
-            transform.rotation = look_quat(controller.pitch, controller.yaw);
-        }
     }
 }
 
@@ -250,6 +222,48 @@ pub fn player_move_sys(
                     rb_velocity.linvel = rb_vel.into();
                 }
             }
+        }
+    }
+}
+
+fn look_quat(pitch: f32, yaw: f32) -> Quat {
+    Quat::from_euler(EulerRot::ZYX, 0.0, yaw, pitch)
+}
+
+fn friction(lateral_speed: f32, friction: f32, stop_speed: f32, dt: f32, velocity: &mut Vec3) {
+    let control = f32::max(lateral_speed, stop_speed);
+    let drop = control * friction * dt;
+    let new_speed = f32::max((lateral_speed - drop) / lateral_speed, 0.0);
+    velocity.x *= new_speed;
+    velocity.z *= new_speed;
+}
+
+fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &mut Vec3) {
+    let vel_proj = Vec3::dot(*velocity, wish_dir);
+    let add_speed = wish_speed - vel_proj;
+    if add_speed <= 0.0 { return; }
+
+    let accel_speed = f32::min(accel * wish_speed * dt, add_speed);
+    let wish_dir = wish_dir * accel_speed;
+    velocity.x += wish_dir.x;
+    velocity.z += wish_dir.z;
+}
+
+// ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗
+// ██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗
+// ██████╔╝█████╗  ██╔██╗ ██║██║  ██║█████╗  ██████╔╝
+// ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗
+// ██║  ██║███████╗██║ ╚████║██████╔╝███████╗██║  ██║
+// ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
+
+pub fn render_player_camera_sys(
+    controller_query: Query<(&PlayerController, &RigidBodyPositionComponent)>,
+    mut camera_query: Query<&mut Transform, With<PerspectiveProjection>>,
+) {
+    for (controller, rb_position) in controller_query.iter() {
+        for mut transform in camera_query.iter_mut() {
+            transform.translation = Vec3::from(rb_position.position.translation) + Vec3::new(0.0, 2.0, 0.0);
+            transform.rotation = look_quat(controller.pitch, controller.yaw);
         }
     }
 }

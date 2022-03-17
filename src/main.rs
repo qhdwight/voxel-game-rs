@@ -39,6 +39,7 @@ fn main() {
         .add_plugin(RapierRenderPlugin)
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugin(InventoryPlugin)
         .add_asset::<Config>()
         .init_asset_loader::<ConfigAssetLoader>()
         .add_startup_system(setup_sys)
@@ -54,12 +55,12 @@ fn main() {
             .with_system(item_pickup_animate_sys)
             .with_system(player_look_sys)
             .with_system(player_move_sys)
+            .with_system(item_pickup_sys)
         )
         .add_system_set_to_stage(
             CoreStage::PostUpdate,
             SystemSet::new()
-                .with_system(item_pickup_sys)
-                .with_system(sync_player_camera_system)
+                .with_system(render_player_camera_sys)
                 .with_system(update_hud_system),
         )
         .run();
@@ -71,6 +72,10 @@ struct TopRightText;
 #[derive(Component)]
 struct PlayerHudText;
 
+pub struct DefaultMaterials {
+    pub gun_material: Handle<StandardMaterial>,
+}
+
 fn setup_sys(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
@@ -80,7 +85,6 @@ fn setup_sys(
 
     let config: Handle<Config> = asset_server.load("default.config.toml");
     commands.insert_resource(config);
-
 
     // commands.spawn_bundle(PointLightBundle {
     //     point_light: PointLight {
@@ -123,19 +127,20 @@ fn setup_sys(
     //         });
     // }
 
-    let rifle_handle = asset_server.load("models/M4.gltf#Mesh0/Primitive0");
-    let rifle_mat_handle = materials.add(StandardMaterial {
+    let gun_material = materials.add(StandardMaterial {
         base_color: Color::DARK_GRAY,
         metallic: 0.05,
         perceptual_roughness: 0.1,
         ..Default::default()
     });
+
+    let rifle_handle = asset_server.load("models/Rifle.gltf#Mesh0/Primitive0");
     commands.spawn()
         .insert(GlobalTransform::default())
         .with_children(|parent| {
             parent.spawn_bundle(PbrBundle {
                 mesh: rifle_handle.clone(),
-                material: rifle_mat_handle.clone(),
+                material: gun_material.clone(),
                 ..Default::default()
             })
                 .insert(ItemPickupVisual::default())
@@ -147,8 +152,10 @@ fn setup_sys(
             position: Vec3::new(8.0, 20.0, 8.0).into(),
             ..Default::default()
         })
-        .insert(ItemPickup { item_name: "M4" })
+        .insert(ItemPickup { item_name: "Rifle" })
         .insert(ColliderPositionSync::Discrete);
+
+    commands.insert_resource(DefaultMaterials { gun_material });
 
     asset_server.watch_for_changes().unwrap()
 }
@@ -313,7 +320,7 @@ fn update_fps_text_sys(
 
 fn update_hud_system(
     mut text_query: Query<&mut Text, With<PlayerHudText>>,
-    player_query: Query<(&Transform), With<PerspectiveProjection>>,
+    player_query: Query<&Transform, With<PerspectiveProjection>>,
     mut item_query: Query<&mut Item>,
     inv_query: Query<(&Inventory, &PlayerInput)>,
 ) {
