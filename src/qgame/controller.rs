@@ -150,7 +150,7 @@ pub fn player_move_sys(
 
                     if let Some((handle, hit)) = query_pipeline.cast_shape(
                         &collider_set, &cast_pos, &cast_dir, &cast_capsule, max_dist, groups,
-                        // Filter to prevent self-collisions
+                        // Filter to prevent self-collisions and collisions with non-solid objects
                         Some(&|hit_collider| {
                             let hit_ent = hit_collider.entity();
                             hit_ent != entity && match collider_type_query.get(hit_ent) {

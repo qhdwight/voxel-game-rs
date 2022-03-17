@@ -3,12 +3,16 @@ use std::{
     option::Option,
     time::Duration,
 };
+use std::ops::MulAssign;
 
 use bevy::{
     core_pipeline::node::MAIN_PASS_DEPENDENCIES,
+    pbr::{DrawMesh, MeshPipeline, MeshPipelineKey, SetMeshBindGroup, SetMeshViewBindGroup},
     prelude::*,
     render::{RenderApp, RenderStage},
     render::render_graph::RenderGraph,
+    render::render_phase::{EntityRenderCommand, SetItemPipeline},
+    render::render_resource::{RenderPipelineDescriptor, SpecializedPipeline},
     utils::HashMap,
 };
 use bevy_rapier3d::prelude::*;
@@ -76,6 +80,9 @@ pub struct Gun {
 #[derive(Debug)]
 pub struct Items(pub [Option<Entity>; 10]);
 
+#[derive(Component)]
+pub struct ItemVisual;
+
 #[derive(Component, Debug)]
 pub struct Inventory {
     pub equipped_slot: Option<u8>,
@@ -88,20 +95,7 @@ pub struct Inventory {
 pub struct InventoryPlugin;
 
 impl Plugin for InventoryPlugin {
-    fn build(&self, app: &mut App) {
-        let render_app = app.sub_app_mut(RenderApp);
-        app.add_system_to_stage(CoreStage::PostUpdate, render_inventory_sys);
-        // render_app
-        //     .init_resource::<GameOfLifePipeline>()
-        //     .add_system_to_stage(RenderStage::Extract, extract_game_of_life_image)
-        //     .add_system_to_stage(RenderStage::Queue, queue_bind_group);
-        //
-        // let mut render_graph = render_app.world.resource_mut::<RenderGraph>();
-        // render_graph.add_node("game_of_life", DispatchGameOfLife::default());
-        // render_graph
-        //     .add_node_edge("game_of_life", MAIN_PASS_DEPENDENCIES)
-        //     .unwrap();
-    }
+    fn build(&self, app: &mut App) {}
 }
 
 // ███╗   ███╗ ██████╗ ██████╗ ██╗███████╗██╗   ██╗
@@ -216,24 +210,12 @@ pub fn item_pickup_sys(
         }
         if let Some(pickup_ent) = pickup_ent {
             if let Some(player_ent) = player_ent {
-                let mut pickup = pickup_query.get_mut(pickup_ent).unwrap();
+                let pickup = pickup_query.get_mut(pickup_ent).unwrap();
                 let mut inv = inv_query.get_mut(player_ent).unwrap();
                 inv.insert_item(player_ent, &mut commands, &mut item_query, pickup.item_name);
                 commands.entity(pickup_ent).despawn_recursive();
             }
         }
-    }
-}
-
-pub fn item_pickup_animate_sys(
-    time: Res<Time>,
-    mut pickup_query: Query<&mut Transform, With<ItemPickupVisual>>,
-) {
-    for mut transform in pickup_query.iter_mut() {
-        let dr = TAU * time.delta_seconds() * 0.125;
-        transform.rotate(Quat::from_axis_angle(Vec3::Y, dr));
-        let height = f32::sin(time.time_since_startup().as_secs_f32()) * 0.125;
-        transform.translation = Vec3::new(0.0, height, 0.0);
     }
 }
 
@@ -310,7 +292,7 @@ impl Inventory {
         &mut self,
         inv_ent: Entity,
         commands: &mut Commands,
-        mut item_query: &mut Query<&mut Item>,
+        item_query: &mut Query<&mut Item>,
         item_name: ItemName,
     ) {
         let open_slot = self.find_slot(item_query, |item| item.is_none());
@@ -359,9 +341,9 @@ pub fn render_inventory_sys(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     materials: Res<DefaultMaterials>,
-    mut item_query: Query<&mut Item>,
+    item_query: Query<&mut Item>,
     player_query: Query<&Inventory>,
-    mut camera_query: Query<(Entity, &Transform), With<PerspectiveProjection>>,
+    camera_query: Query<&Transform, With<PerspectiveProjection>>,
 ) {
     for inv in player_query.iter() {
         for item in inv.item_ents.0.iter() {
@@ -370,10 +352,19 @@ pub fn render_inventory_sys(
                     let is_equipped = inv.equipped_slot == Some(item.inv_slot);
                     if is_equipped {
                         let mesh_handle = asset_server.load(format!("models/{}.gltf#Mesh0/Primitive0", item.name).as_str());
-                        let (ent, transform) = camera_query.single();
-                        let mut transform = transform.clone();
-                        transform.translation += transform.rotation * Vec3::new(0.2, 0.0, 0.5);
-                        commands.entity(ent).insert_bundle(PbrBundle {
+                        let mut transform = camera_query.single().clone();
+                        transform.translation += transform.rotation * Vec3::new(0.4, -0.3, -1.0);
+                        transform.rotation.mul_assign(Quat::from_rotation_y(TAU / 2.0));
+                        let mut item_cmds = commands.entity(*item_ent);
+                        // commands.spawn_bundle(
+                        //     PbrBundle {
+                        //         mesh: mesh_handle.clone(),
+                        //         material: materials.gun_material.clone(),
+                        //         transform,
+                        //         ..Default::default()
+                        //     }
+                        // );
+                        item_cmds.insert_bundle(PbrBundle {
                             mesh: mesh_handle.clone(),
                             material: materials.gun_material.clone(),
                             transform,
@@ -386,3 +377,14 @@ pub fn render_inventory_sys(
     }
 }
 
+pub fn item_pickup_animate_sys(
+    time: Res<Time>,
+    mut pickup_query: Query<&mut Transform, With<ItemPickupVisual>>,
+) {
+    for mut transform in pickup_query.iter_mut() {
+        let dr = TAU * time.delta_seconds() * 0.125;
+        transform.rotate(Quat::from_axis_angle(Vec3::Y, dr));
+        let height = f32::sin(time.time_since_startup().as_secs_f32()) * 0.125;
+        transform.translation = Vec3::new(0.0, height, 0.0);
+    }
+}

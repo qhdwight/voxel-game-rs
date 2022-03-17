@@ -23,6 +23,32 @@ use qgame::*;
 
 mod qgame;
 
+#[derive(Component)]
+struct TopRightText;
+
+#[derive(Component)]
+struct PlayerHudText;
+
+pub struct DefaultMaterials {
+    pub gun_material: Handle<StandardMaterial>,
+}
+
+#[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
+pub enum Modify {
+    Set,
+    Equip,
+    Item,
+    Look,
+    Move,
+    Pickup,
+}
+
+#[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
+pub enum Render {
+    Set,
+    Look,
+}
+
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
@@ -46,34 +72,32 @@ fn main() {
         .add_startup_system(spawn_ui_sys)
         .add_startup_system(spawn_voxel_sys)
         .add_startup_system(spawn_player_sys)
-        .add_system_to_stage(CoreStage::PreUpdate, player_input_system)
+        .add_system_set_to_stage(CoreStage::PreUpdate, SystemSet::new()
+            .with_system(player_input_system),
+        )
         .add_system(cursor_grab_sys)
         .add_system(update_fps_text_sys)
-        .add_system_set(SystemSet::new()
-            .with_system(modify_equip_state_sys)
-            .with_system(modify_item_sys)
-            .with_system(item_pickup_animate_sys)
-            .with_system(player_look_sys)
-            .with_system(player_move_sys)
-            .with_system(item_pickup_sys)
+        .add_system_set(SystemSet::new().label(Modify::Set)
+            .with_system(player_look_sys
+                .label(Modify::Look))
+            .with_system(player_move_sys
+                .label(Modify::Move).after(Modify::Look))
+            .with_system(modify_equip_state_sys
+                .label(Modify::Equip).after(Modify::Move))
+            .with_system(modify_item_sys
+                .label(Modify::Item).after(Modify::Equip))
+            .with_system(item_pickup_sys
+                .label(Modify::Pickup).after(Modify::Item))
         )
-        .add_system_set_to_stage(
-            CoreStage::PostUpdate,
-            SystemSet::new()
-                .with_system(render_player_camera_sys)
-                .with_system(update_hud_system),
+        .add_system_set(SystemSet::new().label(Render::Set).after(Modify::Set)
+            .with_system(item_pickup_animate_sys)
+            .with_system(render_player_camera_sys
+                .label(Render::Look))
+            .with_system(render_inventory_sys
+                .after(Render::Look))
+            .with_system(update_hud_system)
         )
         .run();
-}
-
-#[derive(Component)]
-struct TopRightText;
-
-#[derive(Component)]
-struct PlayerHudText;
-
-pub struct DefaultMaterials {
-    pub gun_material: Handle<StandardMaterial>,
 }
 
 fn setup_sys(
@@ -143,8 +167,7 @@ fn setup_sys(
                 material: gun_material.clone(),
                 ..Default::default()
             })
-                .insert(ItemPickupVisual::default())
-                .insert(Transform::default());
+                .insert(ItemPickupVisual::default());
         }).insert_bundle(
         ColliderBundle {
             shape: ColliderShape::ball(0.5).into(),
