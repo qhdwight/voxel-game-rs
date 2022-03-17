@@ -177,7 +177,7 @@ fn setup_sys(
             position: Vec3::new(8.0, 20.0, 8.0).into(),
             ..Default::default()
         })
-        .insert(ItemPickup { item_name: "Rifle".to_owned() })
+        .insert(ItemPickup { item_name: ItemName::from("Rifle") })
         .insert(ColliderPositionSync::Discrete);
 
     commands.insert_resource(DefaultMaterials { gun_material });

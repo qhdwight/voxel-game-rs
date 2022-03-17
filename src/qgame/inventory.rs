@@ -19,20 +19,21 @@ use bevy::{
 };
 use bevy_rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String;
 
 use crate::{DefaultMaterials, PlayerInput};
 
-const EQUIPPING_STATE: EquipStateName = "equipping";
-const EQUIPPED_STATE: EquipStateName = "equipped";
-const UNEQUIPPING_STATE: EquipStateName = "unequipping";
-const UNEQUIPPED_STATE: EquipStateName = "unequipped";
-const IDLE_STATE: ItemStateName = "idle";
-const RELOAD_STATE: ItemStateName = "reload";
-const FIRE_STATE: ItemStateName = "fire";
+const EQUIPPING_STATE: &str = "equipping";
+const EQUIPPED_STATE: &str = "equipped";
+const UNEQUIPPING_STATE: &str = "unequipping";
+const UNEQUIPPED_STATE: &str = "unequipped";
+const IDLE_STATE: &str = "idle";
+const RELOAD_STATE: &str = "reload";
+const FIRE_STATE: &str = "fire";
 
-type ItemName = &'static str;
-type ItemStateName = &'static str;
-type EquipStateName = &'static str;
+pub type ItemName = String;
+type ItemStateName = String;
+type EquipStateName = String;
 
 #[derive(Serialize, Deserialize)]
 pub struct ItemStateProps {
@@ -154,20 +155,21 @@ pub fn modify_equip_state_sys(
         // Handle unequipping current item
         let is_alr_unequipping = inv.equip_state_name == UNEQUIPPING_STATE;
         if has_valid_wanted && input.wanted_item_slot != inv.equipped_slot && !is_alr_unequipping {
-            inv.equip_state_name = UNEQUIPPING_STATE;
+            inv.equip_state_name = String::from(UNEQUIPPING_STATE);
             inv.equip_state_dur = Duration::ZERO;
         }
+        if inv.equipped_slot.is_none() { return; }
         if inv.equipped_slot.is_none() { return; }
 
         // Handle finishing equip status
         inv.equip_state_dur = inv.equip_state_dur.saturating_add(time.delta());
         while inv.equip_state_dur > Duration::from_millis(2000) {
-            match inv.equip_state_name {
+            match inv.equip_state_name.as_str() {
                 EQUIPPING_STATE => {
-                    inv.equip_state_name = EQUIPPED_STATE;
+                    inv.equip_state_name = String::from(EQUIPPED_STATE);
                 }
                 UNEQUIPPING_STATE => {
-                    inv.equip_state_name = UNEQUIPPED_STATE;
+                    inv.equip_state_name = String::from(UNEQUIPPED_STATE);
                 }
                 _ => {}
             }
@@ -183,7 +185,7 @@ pub fn modify_equip_state_sys(
         } else {
             inv.equipped_slot = inv.find_replacement(&mut item_query);
         }
-        inv.equip_state_name = EQUIPPING_STATE;
+        inv.equip_state_name = String::from(EQUIPPING_STATE);
     }
 }
 
@@ -197,9 +199,9 @@ pub fn modify_item_sys(
         if is_equipped {
             item.state_dur = item.state_dur.saturating_add(time.delta());
             while item.state_dur > Duration::from_millis(2000) {
-                match item.state_name {
+                match item.state_name.as_str() {
                     IDLE_STATE | RELOAD_STATE | FIRE_STATE => {
-                        item.state_name = IDLE_STATE;
+                        item.state_name = String::from(IDLE_STATE);
                     }
                     _ => unimplemented!()
                 }
@@ -245,7 +247,7 @@ pub fn item_pickup_sys(
             if let Some(player_ent) = player_ent {
                 let pickup = pickup_query.get_mut(pickup_ent).unwrap();
                 let mut inv = inv_query.get_mut(player_ent).unwrap();
-                inv.insert_item(player_ent, &mut commands, &mut item_query, pickup.item_name);
+                inv.insert_item(player_ent, &mut commands, &mut item_query, &pickup.item_name);
                 commands.entity(pickup_ent).despawn_recursive();
             }
         }
@@ -257,7 +259,7 @@ impl Default for Inventory {
         Self {
             equipped_slot: None,
             prev_equipped_slot: None,
-            equip_state_name: UNEQUIPPED_STATE.clone(),
+            equip_state_name: String::from(UNEQUIPPED_STATE),
             equip_state_dur: Duration::ZERO,
             item_ents: Items([None; 10]),
         }
@@ -302,7 +304,7 @@ impl Inventory {
         inv_ent: Entity,
         commands: &mut Commands,
         item_query: &mut Query<&mut Item>,
-        item_name: ItemName,
+        item_name: &ItemName,
     ) {
         let open_slot = self.find_slot(item_query, |item| item.is_none());
         if let Some(open_slot) = open_slot {
@@ -314,7 +316,7 @@ impl Inventory {
         &mut self,
         inv_ent: Entity,
         commands: &mut Commands,
-        item_name: ItemName, slot: u8,
+        item_name: &ItemName, slot: u8,
     ) -> &mut Self {
         let existing_item_ent = self.item_ents.0[slot as usize];
         if let Some(existing_item_ent) = existing_item_ent {
@@ -322,9 +324,9 @@ impl Inventory {
         }
         let item_ent = commands.spawn()
             .insert(Item {
-                name: item_name,
+                name: item_name.clone(),
                 amount: 1,
-                state_name: IDLE_STATE,
+                state_name: String::from(IDLE_STATE),
                 state_dur: Duration::ZERO,
                 inv_ent,
                 inv_slot: slot,
@@ -332,7 +334,7 @@ impl Inventory {
         if self.equipped_slot.is_none() {
             self.equipped_slot = Some(slot);
             self.equip_state_dur = Duration::ZERO;
-            self.equip_state_name = EQUIPPING_STATE;
+            self.equip_state_name = String::from(EQUIPPING_STATE);
         }
         self.item_ents.0[slot as usize] = Some(item_ent);
         self
