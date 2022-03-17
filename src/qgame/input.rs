@@ -15,6 +15,8 @@ flags! {
         Jump,
         Sprint,
         Fly,
+        Fire,
+        Reload
     }
 }
 
@@ -124,24 +126,14 @@ pub fn player_input_system(
                 get_axis(&key_input, config.key_forward, config.key_back),
             );
             player_input.flags.clear();
-            if key_input.pressed(config.key_sprint) {
-                player_input.flags |= PlayerInputFlags::Sprint;
-            }
-            if key_input.pressed(config.key_jump) {
-                player_input.flags |= PlayerInputFlags::Jump;
-            }
-            if key_input.just_pressed(config.key_fly) {
-                player_input.flags |= PlayerInputFlags::Fly;
-            }
-            if key_input.pressed(KeyCode::Key1) {
-                player_input.wanted_item_slot = Some(0);
-            }
-            if key_input.pressed(KeyCode::Key2) {
-                player_input.wanted_item_slot = Some(1);
-            }
-            if key_input.pressed(KeyCode::Key3) {
-                player_input.wanted_item_slot = Some(2);
-            }
+            if key_input.pressed(config.key_sprint) { player_input.flags |= PlayerInputFlags::Sprint; }
+            if key_input.pressed(config.key_jump) { player_input.flags |= PlayerInputFlags::Jump; }
+            if key_input.pressed(config.key_fire) { player_input.flags |= PlayerInputFlags::Fire; }
+            if key_input.pressed(config.key_reload) { player_input.flags |= PlayerInputFlags::Reload; }
+            if key_input.just_pressed(config.key_fly) { player_input.flags |= PlayerInputFlags::Fly; }
+            if key_input.pressed(KeyCode::Key1) { player_input.wanted_item_slot = Some(0); }
+            if key_input.pressed(KeyCode::Key2) { player_input.wanted_item_slot = Some(1); }
+            if key_input.pressed(KeyCode::Key3) { player_input.wanted_item_slot = Some(2); }
         }
     }
 }

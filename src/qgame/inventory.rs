@@ -3,7 +3,6 @@ use std::{
     option::Option,
     time::Duration,
 };
-use std::ops::MulAssign;
 
 use bevy::{
     asset::{AssetLoader, LoadContext, LoadedAsset},
@@ -21,7 +20,7 @@ use bevy_rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String;
 
-use crate::{DefaultMaterials, PlayerInput};
+use crate::{DefaultMaterials, PlayerInput, PlayerInputFlags};
 
 const EQUIPPING_STATE: &str = "equipping";
 const EQUIPPED_STATE: &str = "equipped";
@@ -155,21 +154,21 @@ pub fn modify_equip_state_sys(
         // Handle unequipping current item
         let is_alr_unequipping = inv.equip_state_name == UNEQUIPPING_STATE;
         if has_valid_wanted && input.wanted_item_slot != inv.equipped_slot && !is_alr_unequipping {
-            inv.equip_state_name = String::from(UNEQUIPPING_STATE);
+            inv.equip_state_name = EquipStateName::from(UNEQUIPPING_STATE);
             inv.equip_state_dur = Duration::ZERO;
         }
         if inv.equipped_slot.is_none() { return; }
         if inv.equipped_slot.is_none() { return; }
 
-        // Handle finishing equip status
+        // Handle finishing equip state
         inv.equip_state_dur = inv.equip_state_dur.saturating_add(time.delta());
         while inv.equip_state_dur > Duration::from_millis(2000) {
             match inv.equip_state_name.as_str() {
                 EQUIPPING_STATE => {
-                    inv.equip_state_name = String::from(EQUIPPED_STATE);
+                    inv.equip_state_name = EquipStateName::from(EQUIPPED_STATE);
                 }
                 UNEQUIPPING_STATE => {
-                    inv.equip_state_name = String::from(UNEQUIPPED_STATE);
+                    inv.equip_state_name = EquipStateName::from(UNEQUIPPED_STATE);
                 }
                 _ => {}
             }
@@ -185,23 +184,24 @@ pub fn modify_equip_state_sys(
         } else {
             inv.equipped_slot = inv.find_replacement(&mut item_query);
         }
-        inv.equip_state_name = String::from(EQUIPPING_STATE);
+        inv.equip_state_name = EquipStateName::from(EQUIPPING_STATE);
     }
 }
 
 pub fn modify_item_sys(
     time: Res<Time>,
     mut item_query: Query<&mut Item>,
-    inv_query: Query<&Inventory>,
+    player_query: Query<(&PlayerInput, &Inventory)>,
 ) {
     for mut item in item_query.iter_mut() {
-        let is_equipped = inv_query.get(item.inv_ent).unwrap().equipped_slot == Some(item.inv_slot);
+        let (input, inv): (&PlayerInput, &Inventory) = player_query.get(item.inv_ent).unwrap();
+        let is_equipped = inv.equipped_slot == Some(item.inv_slot);
         if is_equipped {
-            item.state_dur = item.state_dur.saturating_add(time.delta());
+            item.modify(inv, input, &time);
             while item.state_dur > Duration::from_millis(2000) {
                 match item.state_name.as_str() {
                     IDLE_STATE | RELOAD_STATE | FIRE_STATE => {
-                        item.state_name = String::from(IDLE_STATE);
+                        item.state_name = ItemStateName::from(IDLE_STATE);
                     }
                     _ => unimplemented!()
                 }
@@ -247,7 +247,7 @@ pub fn item_pickup_sys(
             if let Some(player_ent) = player_ent {
                 let pickup = pickup_query.get_mut(pickup_ent).unwrap();
                 let mut inv = inv_query.get_mut(player_ent).unwrap();
-                inv.insert_item(player_ent, &mut commands, &mut item_query, &pickup.item_name);
+                inv.push_item(player_ent, &mut commands, &mut item_query, &pickup.item_name);
                 commands.entity(pickup_ent).despawn_recursive();
             }
         }
@@ -259,22 +259,63 @@ impl Default for Inventory {
         Self {
             equipped_slot: None,
             prev_equipped_slot: None,
-            equip_state_name: String::from(UNEQUIPPED_STATE),
+            equip_state_name: EquipStateName::from(UNEQUIPPED_STATE),
             equip_state_dur: Duration::ZERO,
             item_ents: Items([None; 10]),
         }
     }
 }
 
-impl Inventory {
-    fn start_item_state(&self, mut item: Mut<Item>, state: ItemStateName, dur: Duration) {
-        item.state_name = state;
-        item.state_dur = dur;
-        match item.state_name {
-            _ => unimplemented!()
+impl Item {
+    fn start_state(&mut self, _inv: &Inventory, state: ItemStateName, dur: Duration) {
+        self.state_name = state;
+        self.state_dur = dur;
+        match self.state_name.as_str() {
+            FIRE_STATE => {
+                println!("Boom!");
+            }
+            _ => {}
         }
     }
 
+    fn can_fire(&mut self, inv: &Inventory, at_state_end: bool) -> bool {
+        match (inv.equip_state_name.as_str(), self.state_name.as_str(), at_state_end) {
+            (EQUIPPED_STATE, FIRE_STATE, true) | (EQUIPPED_STATE, IDLE_STATE, _) => true,
+            _ => false,
+        }
+    }
+
+    fn modify_status(&mut self, inv: &Inventory, input: &PlayerInput, time: &Res<Time>) {
+        while self.state_dur > Duration::from_millis(2000) {
+            // We have just finished a state
+            self.end_status(inv, input, time);
+            let next_state = self.next_state(inv, input);
+            self.start_state(inv, next_state, self.state_dur - Duration::from_millis(2000));
+        }
+        self.state_dur = self.state_dur.saturating_add(time.delta());
+    }
+
+    fn next_state(&mut self, inv: &Inventory, input: &PlayerInput) -> ItemStateName {
+        let do_fire = input.flags.contains(PlayerInputFlags::Fire) && self.can_fire(inv, true);
+        match (self.state_name.as_str(), do_fire) {
+            (FIRE_STATE, true) => ItemStateName::from(FIRE_STATE),
+            _ => ItemStateName::from(IDLE_STATE)
+        }
+    }
+
+    fn end_status(&mut self, _inv: &Inventory, _input: &PlayerInput, _time: &Res<Time>) {}
+
+    fn modify(&mut self, inv: &Inventory, input: &PlayerInput, time: &Res<Time>) {
+        if input.flags.contains(PlayerInputFlags::Fire) && self.can_fire(inv, false) {
+            self.start_state(inv, ItemStateName::from(FIRE_STATE), Duration::ZERO);
+        } else if input.flags.contains(PlayerInputFlags::Reload) {
+            self.start_state(inv, ItemStateName::from(RELOAD_STATE), Duration::ZERO);
+        }
+        self.modify_status(inv, input, time);
+    }
+}
+
+impl Inventory {
     fn find_replacement(&self, item_query: &mut Query<&mut Item>) -> Option<u8> {
         if self.prev_equipped_slot.is_none() {
             self.find_slot(item_query, |item| item.is_some())
@@ -299,7 +340,7 @@ impl Inventory {
         None
     }
 
-    pub fn insert_item(
+    pub fn push_item(
         &mut self,
         inv_ent: Entity,
         commands: &mut Commands,
@@ -326,7 +367,7 @@ impl Inventory {
             .insert(Item {
                 name: item_name.clone(),
                 amount: 1,
-                state_name: String::from(IDLE_STATE),
+                state_name: ItemStateName::from(IDLE_STATE),
                 state_dur: Duration::ZERO,
                 inv_ent,
                 inv_slot: slot,
@@ -334,7 +375,7 @@ impl Inventory {
         if self.equipped_slot.is_none() {
             self.equipped_slot = Some(slot);
             self.equip_state_dur = Duration::ZERO;
-            self.equip_state_name = String::from(EQUIPPING_STATE);
+            self.equip_state_name = EquipStateName::from(EQUIPPING_STATE);
         }
         self.item_ents.0[slot as usize] = Some(item_ent);
         self
@@ -364,9 +405,7 @@ pub fn render_inventory_sys(
                     let mut transform = Transform::default();
                     let mesh_handle = asset_server.load(format!("models/{}.gltf#Mesh0/Primitive0", item.name).as_str());
                     if is_equipped {
-                        transform = camera_query.single().clone();
-                        transform.translation += transform.rotation * Vec3::new(0.4, -0.3, -1.0);
-                        transform.rotation.mul_assign(Quat::from_rotation_y(TAU / 2.0));
+                        transform = camera_query.single().mul_transform(Transform::from_xyz(0.4, -0.3, -1.0));
                     }
                     commands.entity(*item_ent).insert_bundle(PbrBundle {
                         mesh: mesh_handle.clone(),

@@ -148,7 +148,7 @@ pub fn player_move_sys(
                     let max_dist = 0.125;
                     let groups = InteractionGroups::all();
 
-                    if let Some((handle, hit)) = query_pipeline.cast_shape(
+                    if let Some((_handle, hit)) = query_pipeline.cast_shape(
                         &collider_set, &cast_pos, &cast_dir, &cast_capsule, max_dist, groups,
                         // Filter to prevent self-collisions and collisions with non-solid objects
                         Some(&|hit_collider| {
@@ -177,7 +177,7 @@ pub fn player_move_sys(
 
                     wish_speed = f32::min(wish_speed, max_speed);
 
-                    if let Some(ground_hit) = ground_hit {
+                    if let Some(_ground_hit) = ground_hit {
                         // Only apply friction after at least one tick, allows b-hopping without losing speed
                         if controller.ground_tick >= 1 {
                             if lateral_speed > controller.friction_cutoff {
