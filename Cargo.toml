@@ -11,6 +11,7 @@ bevy_rapier3d = { version = "0.12.1", features = ["enhanced-determinism", "serde
 bytemuck = "1.8.0"
 flagset = "0.4.3"
 serde = "1.0.136"
+smartstring = { version = "1.0.0", features = ["serde"] }
 toml = "0.5.8"
 wgpu = "0.12.0"
 

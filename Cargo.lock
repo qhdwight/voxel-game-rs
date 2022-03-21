@@ -2504,6 +2504,7 @@ dependencies = [
  "bytemuck",
  "flagset",
  "serde",
+ "smartstring",
  "toml",
  "wgpu",
 ]
@@ -2835,6 +2836,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "smartstring"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea958ad90cacc8ece7f238fde3671e1b350ee1741964edf2a22fd16f60224163"
+dependencies = [
+ "serde",
+ "static_assertions",
+]
+
+[[package]]
 name = "spirv"
 version = "0.2.0+1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2843,6 +2854,12 @@ dependencies = [
  "bitflags",
  "num-traits",
 ]
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stdweb"
