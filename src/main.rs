@@ -107,9 +107,9 @@ fn setup_sys(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // println!("{}", toml::to_string(&Config::default()).unwrap());
+    // println!("{}", ron::ser::to_string_pretty(&Config::default(), ron::ser::PrettyConfig::default()).unwrap());
 
-    let config: Handle<Config> = asset_server.load("default.config.toml");
+    let config: Handle<Config> = asset_server.load("default.config.ron");
     commands.insert_resource(config);
 
     // commands.spawn_bundle(PointLightBundle {

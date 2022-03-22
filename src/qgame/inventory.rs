@@ -21,8 +21,8 @@ const EQUIPPED_STATE: &str = "equipped";
 const UNEQUIPPING_STATE: &str = "unequipping";
 const UNEQUIPPED_STATE: &str = "unequipped";
 const IDLE_STATE: &str = "idle";
-const RELOAD_STATE: &str = "reload";
 const FIRE_STATE: &str = "fire";
+const RELOAD_STATE: &str = "reload";
 
 pub type ItemName = String;
 type ItemStateName = String;
@@ -41,6 +41,7 @@ pub struct ItemProps {
     pub move_factor: f32,
     pub states: HashMap<ItemStateName, ItemStateProps>,
     pub equip_states: HashMap<EquipStateName, ItemStateProps>,
+    pub weapon_props: Option<WeaponProps>,
 }
 
 #[derive(Serialize, Deserialize, TypeUuid)]
@@ -48,7 +49,7 @@ pub struct ItemProps {
 pub struct WeaponProps {
     pub damage: u16,
     pub headshot_factor: f32,
-    pub item_props: ItemProps,
+    pub gun_props: Option<GunProps>,
 }
 
 #[derive(Serialize, Deserialize, TypeUuid)]
@@ -56,7 +57,6 @@ pub struct WeaponProps {
 pub struct GunProps {
     pub mag_size: u16,
     pub starting_ammo_in_reserve: u16,
-    pub weapon_props: WeaponProps,
 }
 
 #[derive(Component, Debug)]
@@ -101,27 +101,66 @@ pub struct Inventory {
 pub struct InventoryPlugin;
 
 impl Plugin for InventoryPlugin {
-    fn build(&self, app: &mut App) {}
+    fn build(&self, app: &mut App) {
+        app
+            .add_asset::<ItemProps>()
+            .init_asset_loader::<ItemPropAssetLoader>();
+        // println!("{}", ron::ser::to_string_pretty(&ItemProps {
+        //     name: ItemName::from("Rifle"),
+        //     move_factor: 1.0,
+        //     equip_states: HashMap::from_iter([(
+        //         ItemStateName::from(EQUIPPING_STATE),
+        //         ItemStateProps { duration: Duration::from_millis(500), is_persistent: false },
+        //     ), (
+        //         ItemStateName::from(EQUIPPED_STATE),
+        //         ItemStateProps { duration: Duration::from_millis(500), is_persistent: false },
+        //     ), (
+        //         ItemStateName::from(UNEQUIPPING_STATE),
+        //         ItemStateProps { duration: Duration::from_millis(500), is_persistent: false },
+        //     ), (
+        //         ItemStateName::from(UNEQUIPPED_STATE),
+        //         ItemStateProps { duration: Duration::from_millis(500), is_persistent: false },
+        //     )]),
+        //     states: HashMap::from_iter([(
+        //         ItemStateName::from(IDLE_STATE),
+        //         ItemStateProps { duration: Duration::from_millis(2000), is_persistent: false },
+        //     ), (
+        //         ItemStateName::from(FIRE_STATE),
+        //         ItemStateProps { duration: Duration::from_millis(20), is_persistent: false },
+        //     ), (
+        //         ItemStateName::from(RELOAD_STATE),
+        //         ItemStateProps { duration: Duration::from_millis(3000), is_persistent: false },
+        //     )]),
+        //     weapon_props: Some(WeaponProps {
+        //         damage: 20,
+        //         headshot_factor: 2.0,
+        //         gun_props: Some(GunProps {
+        //             mag_size: 30,
+        //             starting_ammo_in_reserve: 30,
+        //         }),
+        //     }),
+        // }, ron::ser::PrettyConfig::default()).unwrap());
+    }
 }
 
 #[derive(Default)]
-pub struct ConfigAssetLoader;
+pub struct ItemPropAssetLoader;
 
-impl AssetLoader for ConfigAssetLoader {
+impl AssetLoader for ItemPropAssetLoader {
     fn load<'a>(
         &'a self,
         bytes: &'a [u8],
         load_context: &'a mut LoadContext,
     ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
         Box::pin(async move {
-            let asset: GunProps = toml::from_slice(bytes)?;
+            let asset: ItemProps = ron::de::from_bytes(bytes)?;
             load_context.set_default_asset(LoadedAsset::new(asset));
             Ok(())
         })
     }
 
     fn extensions(&self) -> &[&str] {
-        &["config.toml"]
+        &["item.ron"]
     }
 }
 
@@ -133,8 +172,9 @@ impl AssetLoader for ConfigAssetLoader {
 // ╚══════╝ ╚═════╝  ╚═════╝ ╚═╝ ╚═════╝
 
 pub fn modify_equip_state_sys(
-    time: Res<Time>,
     asset_server: Res<AssetServer>,
+    time: Res<Time>,
+    item_props: Res<Assets<ItemProps>>,
     mut inv_query: Query<(&PlayerInput, &mut Inventory)>,
     mut item_query: Query<&mut Item>,
 ) {
@@ -149,11 +189,28 @@ pub fn modify_equip_state_sys(
             inv.equip_state_dur = Duration::ZERO;
         }
         if inv.equipped_slot.is_none() { return; }
-        if inv.equipped_slot.is_none() { return; }
 
         // Handle finishing equip state
         inv.equip_state_dur = inv.equip_state_dur.saturating_add(time.delta());
-        while inv.equip_state_dur > Duration::from_millis(2000) {
+        let mut equip_state_dur = Duration::ZERO;
+        while inv.equip_state_dur > {
+            // let item = item_props.get(inv.item_ents.0[inv.equipped_slot.unwrap() as usize].unwrap());
+            let item_prop: Handle<ItemProps> = asset_server.load("items/rifle.item.ron");
+            match item_props.get(item_prop) {
+                Some(item_prop) => {
+                    match item_prop.equip_states.get(&inv.equip_state_name) {
+                        Some(state_prop) => equip_state_dur = state_prop.duration,
+                        None => {
+                            println!("No equip state found for {}", inv.equip_state_name);
+                        }
+                    }
+                }
+                None => {}
+            }
+            equip_state_dur
+        } {
+            if equip_state_dur.is_zero() { break; }
+
             match inv.equip_state_name.as_str() {
                 EQUIPPING_STATE => {
                     inv.equip_state_name = EquipStateName::from(EQUIPPED_STATE);
@@ -163,7 +220,7 @@ pub fn modify_equip_state_sys(
                 }
                 _ => {}
             }
-            inv.equip_state_dur = inv.equip_state_dur.saturating_sub(Duration::from_millis(2000));
+            inv.equip_state_dur = inv.equip_state_dur.saturating_sub(equip_state_dur);
         }
 
         if inv.equip_state_name != UNEQUIPPED_STATE { return; }
@@ -180,7 +237,9 @@ pub fn modify_equip_state_sys(
 }
 
 pub fn modify_item_sys(
+    asset_server: Res<AssetServer>,
     time: Res<Time>,
+    item_props: Res<Assets<ItemProps>>,
     mut item_query: Query<&mut Item>,
     player_query: Query<(&PlayerInput, &Inventory)>,
 ) {
@@ -189,7 +248,25 @@ pub fn modify_item_sys(
         let is_equipped = inv.equipped_slot == Some(item.inv_slot);
         if is_equipped {
             item.modify(inv, input, &time);
-            while item.state_dur > Duration::from_millis(2000) {
+
+            let mut state_dur = Duration::ZERO;
+            while item.state_dur > {
+                let item_prop: Handle<ItemProps> = asset_server.load(format!("items/{}.item.ron", item.name).as_str());
+                match item_props.get(item_prop) {
+                    Some(item_prop) => {
+                        match item_prop.states.get(&item.state_name) {
+                            Some(state_prop) => state_dur = state_prop.duration,
+                            None => {
+                                println!("No state found for {}", inv.equip_state_name);
+                            }
+                        }
+                    }
+                    None => {}
+                }
+                state_dur
+            } {
+                if state_dur.is_zero() { break; }
+
                 match item.state_name.as_str() {
                     IDLE_STATE | RELOAD_STATE | FIRE_STATE => {
                         item.state_name = ItemStateName::from(IDLE_STATE);

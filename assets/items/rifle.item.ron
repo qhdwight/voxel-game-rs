@@ -1,0 +1,65 @@
+(
+    name: "Rifle",
+    move_factor: 1,
+    states: {
+        "reload": (
+            duration: (
+                secs: 3,
+                nanos: 0,
+            ),
+            is_persistent: false,
+        ),
+        "idle": (
+            duration: (
+                secs: 2,
+                nanos: 0,
+            ),
+            is_persistent: false,
+        ),
+        "fire": (
+            duration: (
+                secs: 0,
+                nanos: 20000000,
+            ),
+            is_persistent: false,
+        ),
+    },
+    equip_states: {
+        "unequipping": (
+            duration: (
+                secs: 0,
+                nanos: 500000000,
+            ),
+            is_persistent: false,
+        ),
+        "equipped": (
+            duration: (
+                secs: 0,
+                nanos: 500000000,
+            ),
+            is_persistent: false,
+        ),
+        "unequipped": (
+            duration: (
+                secs: 0,
+                nanos: 500000000,
+            ),
+            is_persistent: false,
+        ),
+        "equipping": (
+            duration: (
+                secs: 0,
+                nanos: 500000000,
+            ),
+            is_persistent: false,
+        ),
+    },
+    weapon_props: Some((
+        damage: 20,
+        headshot_factor: 2,
+        gun_props: Some((
+            mag_size: 30,
+            starting_ammo_in_reserve: 30,
+        )),
+    )),
+)

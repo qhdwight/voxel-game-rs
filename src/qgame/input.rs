@@ -148,13 +148,13 @@ impl AssetLoader for ConfigAssetLoader {
         load_context: &'a mut LoadContext,
     ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
         Box::pin(async move {
-            let asset: Config = toml::from_slice(bytes)?;
+            let asset: Config = ron::de::from_bytes(bytes)?;
             load_context.set_default_asset(LoadedAsset::new(asset));
             Ok(())
         })
     }
 
     fn extensions(&self) -> &[&str] {
-        &["config.toml"]
+        &["config.ron"]
     }
 }
