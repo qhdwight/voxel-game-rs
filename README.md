@@ -1,5 +1,7 @@
 # Voxel Game Powered by Bevy
 
+[![Rust](https://github.com/qhdwight/qgame-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/qhdwight/qgame-rs/actions/workflows/rust.yml)
+
 Hello! This repository is my playground for learning the [Bevy](https://github.com/bevyengine/bevy) engine written in Rust 🦀. Physics is powered by the [Rapier plugin](https://github.com/dimforge/bevy_rapier).
 
 ### Features

@@ -1,6 +1,9 @@
 extern crate core;
 
-use std::f32::consts::TAU;
+use std::{
+    f32::consts::TAU,
+    fmt::Write,
+};
 
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
@@ -20,6 +23,32 @@ use qgame::*;
 
 mod qgame;
 
+#[derive(Component)]
+struct TopRightText;
+
+#[derive(Component)]
+struct PlayerHudText;
+
+pub struct DefaultMaterials {
+    pub gun_material: Handle<StandardMaterial>,
+}
+
+#[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
+pub enum Modify {
+    Set,
+    Equip,
+    Item,
+    Look,
+    Move,
+    Pickup,
+}
+
+#[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
+pub enum Render {
+    Set,
+    Look,
+}
+
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
@@ -36,73 +65,52 @@ fn main() {
         .add_plugin(RapierRenderPlugin)
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugin(InventoryPlugin)
         .add_asset::<Config>()
         .init_asset_loader::<ConfigAssetLoader>()
-        .add_startup_system(setup_system)
-        .add_system_to_stage(CoreStage::PreUpdate, player_input_system)
-        .add_system(cursor_grab_system)
-        .add_system(update_fps_text_system)
-        .add_system(manage_inventory_system)
-        .add_system_set(SystemSet::new()
-            .with_system(player_look_system)
-            .with_system(player_move_system)
-            // .with_system(player_narrow_phase_system)
+        .add_startup_system(setup_sys)
+        .add_startup_system(spawn_ui_sys)
+        .add_startup_system(spawn_voxel_sys)
+        .add_startup_system(spawn_player_sys)
+        .add_system_set_to_stage(CoreStage::PreUpdate, SystemSet::new()
+            .with_system(player_input_system),
         )
-        .add_system_to_stage(CoreStage::PostUpdate, sync_player_camera_system)
-        .add_system_to_stage(CoreStage::PostUpdate, update_hud_system)
+        .add_system(cursor_grab_sys)
+        .add_system(update_fps_text_sys)
+        .add_system_set(SystemSet::new()
+            .label(Modify::Set)
+            .with_system(player_look_sys
+                .label(Modify::Look))
+            .with_system(player_move_sys
+                .label(Modify::Move).after(Modify::Look))
+            .with_system(modify_equip_state_sys
+                .label(Modify::Equip).after(Modify::Move))
+            .with_system(modify_item_sys
+                .label(Modify::Item).after(Modify::Equip))
+            .with_system(item_pickup_sys
+                .label(Modify::Pickup).after(Modify::Item))
+        )
+        .add_system_set(SystemSet::new()
+            .label(Render::Set).after(Modify::Set)
+            .with_system(item_pickup_animate_sys)
+            .with_system(render_player_camera_sys
+                .label(Render::Look))
+            .with_system(render_inventory_sys
+                .after(Render::Look))
+            .with_system(update_hud_system)
+        )
         .run();
 }
 
-#[derive(Component)]
-struct TextChanges;
-
-fn setup_system(
+fn setup_sys(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // println!("{}", toml::to_string(&Config::default()).unwrap());
 
-    let config: Handle<Config> = asset_server.load("default_config.toml");
+    let config: Handle<Config> = asset_server.load("default.config.toml");
     commands.insert_resource(config);
-
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-    mesh.set_indices(Some(Indices::U32(Vec::with_capacity(4096))));
-    mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(Vec::with_capacity(4096)));
-    mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, VertexAttributeValues::Float32x3(Vec::with_capacity(4096)));
-    mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, VertexAttributeValues::Float32x2(Vec::with_capacity(4096)));
-    let mesh = meshes.add(mesh);
-    let material = materials.add(StandardMaterial {
-        base_color: Color::DARK_GREEN,
-        ..Default::default()
-    });
-
-    commands.spawn_bundle(PerspectiveCameraBundle::new_3d());
-
-    commands.spawn()
-        .insert_bundle(ColliderBundle {
-            shape: ColliderShape::capsule(Point3::new(0.0, 0.5, 0.0), Point3::new(0.0, 1.5, 0.0), 0.5).into(),
-            collider_type: ColliderType::Solid.into(),
-            ..Default::default()
-        })
-        .insert(ColliderDebugRender::with_id(0))
-        .insert_bundle(RigidBodyBundle {
-            body_type: RigidBodyType::Dynamic.into(),
-            position: Vec3::new(4.0, 24.0, 4.0).into(),
-            activation: RigidBodyActivation::cannot_sleep().into(),
-            mass_properties: RigidBodyMassPropsFlags::ROTATION_LOCKED.into(),
-            ccd: RigidBodyCcd { ccd_enabled: true, ..Default::default() }.into(),
-            ..Default::default()
-        })
-        .insert(PlayerInput {
-            pitch: -TAU / 12.0,
-            yaw: TAU * 5.0 / 8.0,
-            ..Default::default()
-        })
-        .insert(PlayerController {
-            ..Default::default()
-        });
 
     // commands.spawn_bundle(PointLightBundle {
     //     point_light: PointLight {
@@ -124,48 +132,63 @@ fn setup_system(
         ..Default::default()
     });
 
-    {
-        let mesh = meshes.add(Mesh::from(bevy::prelude::shape::Cube { size: 1.0 }));
-        let material = materials.add(StandardMaterial {
-            base_color: Color::PINK,
-            ..Default::default()
-        });
-        commands.spawn()
-            .insert_bundle(PbrBundle {
-                mesh: mesh.clone(),
-                material: material.clone(),
-                transform: Transform::from_xyz(-18.0, 32.0, -18.0),
+    // {
+    //     let mesh = meshes.add(Mesh::from(bevy::prelude::shape::Cube { size: 1.0 }));
+    //     let material = materials.add(StandardMaterial {
+    //         base_color: Color::PINK,
+    //         ..Default::default()
+    //     });
+    //     commands.spawn()
+    //         .insert_bundle(PbrBundle {
+    //             mesh: mesh.clone(),
+    //             material: material.clone(),
+    //             transform: Transform::from_xyz(-18.0, 32.0, -18.0),
+    //             ..Default::default()
+    //         })
+    //         .insert_bundle(ColliderBundle {
+    //             shape: ColliderShape::cuboid(1.0, 1.0, 1.0).into(),
+    //             collider_type: ColliderType::Solid.into(),
+    //             position: Vec3::new(-18.0, 32.0, -18.0).into(),
+    //             ..Default::default()
+    //         });
+    // }
+
+    let gun_material = materials.add(StandardMaterial {
+        base_color: Color::DARK_GRAY,
+        metallic: 0.05,
+        perceptual_roughness: 0.1,
+        ..Default::default()
+    });
+
+    let rifle_handle = asset_server.load("models/Rifle.gltf#Mesh0/Primitive0");
+    commands.spawn()
+        .insert(GlobalTransform::default())
+        .with_children(|parent| {
+            parent.spawn_bundle(PbrBundle {
+                mesh: rifle_handle.clone(),
+                material: gun_material.clone(),
                 ..Default::default()
             })
-            .insert_bundle(ColliderBundle {
-                shape: ColliderShape::cuboid(1.0, 1.0, 1.0).into(),
-                collider_type: ColliderType::Solid.into(),
-                position: Vec3::new(-18.0, 32.0, -18.0).into(),
-                ..Default::default()
-            });
-    }
-
-    commands.spawn().insert(Map::default());
-
-    commands.spawn()
-        .insert(Chunk::new(IVec3::ZERO))
-        // .insert_bundle(ColliderBundle {
-        //     shape: ColliderShape::trimesh(Vec::new(), Vec::new()).into(),
-        //     collider_type: ColliderType::Solid.into(),
-        //     position: Vec3::new(0.0, 0.0, 0.0).into(),
-        //     material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
-        //     mass_properties: ColliderMassProps::Density(2.0).into(),
-        //     ..Default::default()
-        // })
-        .insert(ColliderDebugRender::with_id(1))
-        .insert_bundle(PbrBundle {
-            mesh: mesh.clone(),
-            material: material.clone(),
+                .insert(ItemPickupVisual::default());
+        }).insert_bundle(
+        ColliderBundle {
+            shape: ColliderShape::ball(0.5).into(),
+            collider_type: ColliderType::Sensor.into(),
+            position: Vec3::new(8.0, 20.0, 8.0).into(),
             ..Default::default()
-        });
+        })
+        .insert(ItemPickup { item_name: ItemName::from("Rifle") })
+        .insert(ColliderPositionSync::Discrete);
 
+    commands.insert_resource(DefaultMaterials { gun_material });
+
+    asset_server.watch_for_changes().unwrap()
+}
+
+fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
     commands.spawn_bundle(UiCameraBundle::default());
+
     commands
         .spawn_bundle(TextBundle {
             style: Style {
@@ -184,19 +207,99 @@ fn setup_system(
                         value: "".to_string(),
                         style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::WHITE },
                     },
+                ],
+                alignment: Default::default(),
+            },
+            ..Default::default()
+        })
+        .insert(TopRightText);
+
+    commands
+        .spawn_bundle(TextBundle {
+            style: Style {
+                align_self: AlignSelf::FlexEnd,
+                position_type: PositionType::Absolute,
+                position: Rect {
+                    bottom: Val::Px(5.0),
+                    left: Val::Px(5.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            text: Text {
+                sections: vec![
                     TextSection {
                         value: "".to_string(),
-                        style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::GRAY },
+                        style: TextStyle { font: font.clone(), font_size: 12.0, color: Color::ANTIQUE_WHITE },
                     },
                 ],
                 alignment: Default::default(),
             },
             ..Default::default()
         })
-        .insert(TextChanges);
+        .insert(PlayerHudText);
+}
+
+fn spawn_voxel_sys(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    mesh.set_indices(Some(Indices::U32(Vec::with_capacity(4096))));
+    mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(Vec::with_capacity(4096)));
+    mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, VertexAttributeValues::Float32x3(Vec::with_capacity(4096)));
+    mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, VertexAttributeValues::Float32x2(Vec::with_capacity(4096)));
+    let mesh_handle = meshes.add(mesh);
+    let ground_mat_handle = materials.add(StandardMaterial {
+        base_color: Color::DARK_GREEN,
+        ..Default::default()
+    });
+    commands.spawn().insert(Map::default());
+    commands.spawn()
+        .insert(Chunk::new(IVec3::ZERO))
+        .insert(ColliderDebugRender::with_id(1))
+        .insert_bundle(PbrBundle {
+            mesh: mesh_handle.clone(),
+            material: ground_mat_handle.clone(),
+            ..Default::default()
+        });
+}
+
+fn spawn_player_sys(mut commands: Commands) {
+    let inv = Inventory::default();
+    commands.spawn()
+        .insert_bundle(ColliderBundle {
+            shape: ColliderShape::capsule(Point3::new(0.0, 0.5, 0.0), Point3::new(0.0, 1.5, 0.0), 0.5).into(),
+            collider_type: ColliderType::Solid.into(),
+            flags: ActiveEvents::INTERSECTION_EVENTS.into(),
+            ..Default::default()
+        })
+        .insert(ColliderDebugRender::with_id(0))
+        .insert_bundle(RigidBodyBundle {
+            body_type: RigidBodyType::Dynamic.into(),
+            position: Vec3::new(4.0, 24.0, 4.0).into(),
+            activation: RigidBodyActivation::cannot_sleep().into(),
+            mass_properties: RigidBodyMassPropsFlags::ROTATION_LOCKED.into(),
+            ccd: RigidBodyCcd { ccd_enabled: true, ..Default::default() }.into(),
+            ..Default::default()
+        })
+        .insert(PlayerInput {
+            pitch: -TAU / 12.0,
+            yaw: TAU * 5.0 / 8.0,
+            ..Default::default()
+        })
+        .insert(PlayerController {
+            ..Default::default()
+        })
+        .insert(inv);
+
+    commands.spawn_bundle(PerspectiveCameraBundle::new_3d());
 }
 
 pub struct Buffers {
+    // Place edge table and triangle table in uniform buffer
+    // They are too large to have inline in the shader
     edge_table: Buffer,
     tri_table: Buffer,
     points: BufVec<Vec2>,
@@ -214,10 +317,10 @@ struct BindingGroups {
     voxels: BindGroup,
 }
 
-fn update_fps_text_system(
+fn update_fps_text_sys(
     time: Res<Time>,
     diagnostics: Res<Diagnostics>,
-    mut query: Query<&mut Text, With<TextChanges>>,
+    mut query: Query<&mut Text, With<TopRightText>>,
 ) {
     for mut text in query.iter_mut() {
         let mut fps = 0.0;
@@ -234,18 +337,35 @@ fn update_fps_text_system(
             }
         }
 
-        text.sections[0].value = format!("{:.1} fps, {:.3} ms/frame", fps, frame_time * 1000.0);
+        let text = &mut text.sections[0].value;
+        text.clear();
+        write!(text, "{:.1} fps, {:.3} ms/frame", fps, frame_time * 1000.0).unwrap();
     }
 }
 
 fn update_hud_system(
-    mut text_query: Query<&mut Text, With<TextChanges>>,
+    mut text_query: Query<&mut Text, With<PlayerHudText>>,
     player_query: Query<&Transform, With<PerspectiveProjection>>,
+    mut item_query: Query<&mut Item>,
+    inv_query: Query<(&Inventory, &PlayerInput)>,
 ) {
     for mut text in text_query.iter_mut() {
+        let text = &mut text.sections[0].value;
+        text.clear();
         for transform in player_query.iter() {
             let p = transform.translation;
-            text.sections[1].value = format!("\n[{:.2}, {:.2}, {:.2}]", p.x, p.y, p.z);
+            write!(text, "Position {{ {:.2}, {:.2}, {:.2} }}", p.x, p.y, p.z).unwrap();
+        }
+        for (inv, input) in inv_query.iter() {
+            write!(text, "\n{:?}", input).unwrap();
+            write!(text, "\n{:?}", inv).unwrap();
+            for i in 0..inv.item_ents.0.len() {
+                if let Some(item_ent) = inv.item_ents.0[i] {
+                    if let Ok(item) = item_query.get_mut(item_ent) {
+                        write!(text, "\n{:?}", *item).unwrap();
+                    }
+                }
+            }
         }
     }
 }

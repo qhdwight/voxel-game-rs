@@ -64,26 +64,14 @@ impl Default for PlayerController {
     }
 }
 
-fn friction(lateral_speed: f32, friction: f32, stop_speed: f32, dt: f32, velocity: &mut Vec3) {
-    let control = f32::max(lateral_speed, stop_speed);
-    let drop = control * friction * dt;
-    let new_speed = f32::max((lateral_speed - drop) / lateral_speed, 0.0);
-    velocity.x *= new_speed;
-    velocity.z *= new_speed;
-}
+// ███╗   ███╗ ██████╗ ██████╗ ██╗███████╗██╗   ██╗
+// ████╗ ████║██╔═══██╗██╔══██╗██║██╔════╝╚██╗ ██╔╝
+// ██╔████╔██║██║   ██║██║  ██║██║█████╗   ╚████╔╝
+// ██║╚██╔╝██║██║   ██║██║  ██║██║██╔══╝    ╚██╔╝
+// ██║ ╚═╝ ██║╚██████╔╝██████╔╝██║██║        ██║
+// ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝        ╚═╝
 
-fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &mut Vec3) {
-    let vel_proj = Vec3::dot(*velocity, wish_dir);
-    let add_speed = wish_speed - vel_proj;
-    if add_speed <= 0.0 { return; }
-
-    let accel_speed = f32::min(accel * wish_speed * dt, add_speed);
-    let wish_dir = wish_dir * accel_speed;
-    velocity.x += wish_dir.x;
-    velocity.z += wish_dir.z;
-}
-
-pub fn player_look_system(
+pub fn player_look_sys(
     mut query: Query<(&mut PlayerController, &PlayerInput)>
 ) {
     for (mut controller, input) in query.iter_mut() {
@@ -92,25 +80,11 @@ pub fn player_look_system(
     }
 }
 
-fn look_quat(pitch: f32, yaw: f32) -> Quat {
-    return Quat::from_euler(EulerRot::ZYX, 0.0, yaw, pitch);
-}
-
-pub fn sync_player_camera_system(
-    controller_query: Query<(&PlayerController, &RigidBodyPositionComponent)>,
-    mut camera_query: Query<&mut Transform, With<PerspectiveProjection>>,
-) {
-    for (controller, rb_position) in controller_query.iter() {
-        for mut transform in camera_query.iter_mut() {
-            transform.translation = Vec3::from(rb_position.position.translation) + Vec3::new(0.0, 2.0, 0.0);
-            transform.rotation = look_quat(controller.pitch, controller.yaw);
-        }
-    }
-}
-
-pub fn player_move_system(
+pub fn player_move_sys(
     time: Res<Time>,
-    query_pipeline: Res<QueryPipeline>, collider_query: QueryPipelineColliderComponentsQuery,
+    query_pipeline: Res<QueryPipeline>,
+    collider_query: QueryPipelineColliderComponentsQuery,
+    collider_type_query: Query<&ColliderTypeComponent>,
     mut query: Query<(
         Entity, &PlayerInput, &mut PlayerController, &ColliderShapeComponent,
         &RigidBodyPositionComponent, &mut RigidBodyVelocityComponent,
@@ -127,8 +101,8 @@ pub fn player_move_system(
 
         if input.flags.contains(PlayerInputFlags::Fly) {
             controller.move_mode = match controller.move_mode {
-                MoveMode::Noclip => { MoveMode::Ground }
-                MoveMode::Ground => { MoveMode::Noclip }
+                MoveMode::Noclip => MoveMode::Ground,
+                MoveMode::Ground => MoveMode::Noclip
             }
         }
 
@@ -174,10 +148,16 @@ pub fn player_move_system(
                     let max_dist = 0.125;
                     let groups = InteractionGroups::all();
 
-                    if let Some((handle, hit)) = query_pipeline.cast_shape(
+                    if let Some((_handle, hit)) = query_pipeline.cast_shape(
                         &collider_set, &cast_pos, &cast_dir, &cast_capsule, max_dist, groups,
-                        // Filter to prevent self-collisions
-                        Some(&|hit_collider| hit_collider.entity() != entity),
+                        // Filter to prevent self-collisions and collisions with non-solid objects
+                        Some(&|hit_collider| {
+                            let hit_ent = hit_collider.entity();
+                            hit_ent != entity && match collider_type_query.get(hit_ent) {
+                                Ok(collider_type) => collider_type.0 == ColliderType::Solid,
+                                Err(_) => false
+                            }
+                        }),
                     ) {
                         ground_hit = Some(hit);
                     }
@@ -197,7 +177,7 @@ pub fn player_move_system(
 
                     wish_speed = f32::min(wish_speed, max_speed);
 
-                    if let Some(ground_hit) = ground_hit {
+                    if let Some(_ground_hit) = ground_hit {
                         // Only apply friction after at least one tick, allows b-hopping without losing speed
                         if controller.ground_tick >= 1 {
                             if lateral_speed > controller.friction_cutoff {
@@ -242,6 +222,48 @@ pub fn player_move_system(
                     rb_velocity.linvel = rb_vel.into();
                 }
             }
+        }
+    }
+}
+
+fn look_quat(pitch: f32, yaw: f32) -> Quat {
+    Quat::from_euler(EulerRot::ZYX, 0.0, yaw, pitch)
+}
+
+fn friction(lateral_speed: f32, friction: f32, stop_speed: f32, dt: f32, velocity: &mut Vec3) {
+    let control = f32::max(lateral_speed, stop_speed);
+    let drop = control * friction * dt;
+    let new_speed = f32::max((lateral_speed - drop) / lateral_speed, 0.0);
+    velocity.x *= new_speed;
+    velocity.z *= new_speed;
+}
+
+fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &mut Vec3) {
+    let vel_proj = Vec3::dot(*velocity, wish_dir);
+    let add_speed = wish_speed - vel_proj;
+    if add_speed <= 0.0 { return; }
+
+    let accel_speed = f32::min(accel * wish_speed * dt, add_speed);
+    let wish_dir = wish_dir * accel_speed;
+    velocity.x += wish_dir.x;
+    velocity.z += wish_dir.z;
+}
+
+// ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗
+// ██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗
+// ██████╔╝█████╗  ██╔██╗ ██║██║  ██║█████╗  ██████╔╝
+// ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗
+// ██║  ██║███████╗██║ ╚████║██████╔╝███████╗██║  ██║
+// ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
+
+pub fn render_player_camera_sys(
+    controller_query: Query<(&PlayerController, &RigidBodyPositionComponent)>,
+    mut camera_query: Query<&mut Transform, With<PerspectiveProjection>>,
+) {
+    for (controller, rb_position) in controller_query.iter() {
+        for mut transform in camera_query.iter_mut() {
+            transform.translation = Vec3::from(rb_position.position.translation) + Vec3::new(0.0, 2.0, 0.0);
+            transform.rotation = look_quat(controller.pitch, controller.yaw);
         }
     }
 }

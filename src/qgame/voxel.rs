@@ -81,7 +81,7 @@ impl Plugin for VoxelsPlugin {
 impl FromWorld for VoxelsPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
-        let asset_server = world.get_resource::<AssetServer>().unwrap();
+        let _asset_server = world.get_resource::<AssetServer>().unwrap();
 
         let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("edge table buffer"), contents: cast_slice(EDGE_TABLE), usage: BufferUsages::UNIFORM });
         let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("tri table buffer"), contents: cast_slice(TRI_TABLE), usage: BufferUsages::UNIFORM });
@@ -168,7 +168,7 @@ impl FromWorld for VoxelsPipeline {
     }
 }
 
-pub fn sync_added_chunks_system(
+pub fn _sync_added_chunks_system(
     added_chunk_query: Query<(Entity, &Chunk), Added<Chunk>>,
     mut map_query: Query<&mut Map>,
 ) {
@@ -180,8 +180,7 @@ pub fn sync_added_chunks_system(
 }
 
 pub fn voxel_polygonize_system(
-    mut commands: Commands,
-    mut query: Query<(Entity, &Handle<Mesh>, Option<&mut ColliderShapeComponent>, &mut Chunk)>,
+    mut query: Query<(&Handle<Mesh>, Option<&mut ColliderShapeComponent>, &mut Chunk)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut buffers: ResMut<Buffers>,
     time: Res<Time>,
@@ -191,7 +190,7 @@ pub fn voxel_polygonize_system(
 ) {
     // let now = std::time::Instant::now();
 
-    for (entity, mesh, mut collider, mut chunk) in query.iter_mut() {
+    for (mesh, mut _collider, mut chunk) in query.iter_mut() {
         buffers.atomics.clear();
         buffers.atomics.push(0);
         buffers.atomics.push(0);
@@ -318,27 +317,28 @@ pub fn voxel_polygonize_system(
             }
         }
 
-        if let Some(Indices::U32(indices)) = mesh.indices() {
-            if let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
-                let vertices = vertices.iter().map(|v| (*v).into()).collect();
-                let indices = indices.chunks(3).map(|t| t.try_into().unwrap()).collect();
-                let shape: ColliderShapeComponent = ColliderShape::trimesh(vertices, indices).into();
-
-                if collider.is_none() {
-                    commands.entity(entity)
-                        .insert_bundle(ColliderBundle {
-                            shape,
-                            collider_type: ColliderType::Solid.into(),
-                            position: Vec3::new(0.0, 0.0, 0.0).into(),
-                            material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
-                            mass_properties: ColliderMassProps::Density(2.0).into(),
-                            ..Default::default()
-                        });
-                } else {
-                    commands.entity(entity).insert(shape);
-                }
-            }
-        }
+        // // TODO:perf inefficient
+        // if let Some(Indices::U32(indices)) = mesh.indices() {
+        //     if let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+        //         let vertices = vertices.iter().map(|v| (*v).into()).collect();
+        //         let indices = indices.chunks(3).map(|t| t.try_into().unwrap()).collect();
+        //         let shape: ColliderShapeComponent = ColliderShape::trimesh(vertices, indices).into();
+        //
+        //         if collider.is_none() {
+        //             commands.entity(entity)
+        //                 .insert_bundle(ColliderBundle {
+        //                     shape,
+        //                     collider_type: ColliderType::Solid.into(),
+        //                     position: Vec3::new(0.0, 0.0, 0.0).into(),
+        //                     material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
+        //                     mass_properties: ColliderMassProps::Density(2.0).into(),
+        //                     ..Default::default()
+        //                 });
+        //         } else {
+        //             commands.entity(entity).insert(shape);
+        //         }
+        //     }
+        // }
     }
 
     // println!("Elapsed: {:.2?}", now.elapsed());

@@ -15,15 +15,18 @@ flags! {
         Jump,
         Sprint,
         Fly,
+        Fire,
+        Reload
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
 pub struct PlayerInput {
     pub movement: Vec3,
     pub flags: FlagSet<PlayerInputFlags>,
     pub yaw: f32,
     pub pitch: f32,
+    pub wanted_item_slot: Option<u8>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, TypeUuid)]
@@ -40,6 +43,8 @@ pub struct Config {
     pub key_jump: KeyCode,
     pub key_fly: KeyCode,
     pub key_crouch: KeyCode,
+    pub key_fire: KeyCode,
+    pub key_reload: KeyCode,
 }
 
 impl Default for Config {
@@ -55,7 +60,9 @@ impl Default for Config {
             key_jump: KeyCode::Space,
             key_fly: KeyCode::F,
             key_crouch: KeyCode::LControl,
+            key_fire: KeyCode::Q,
             sensitivity: 0.5,
+            key_reload: KeyCode::R,
         }
     }
 }
@@ -72,7 +79,7 @@ fn get_axis(key_input: &Res<Input<KeyCode>>, key_pos: KeyCode, key_neg: KeyCode)
     get_pressed(key_input, key_pos) - get_pressed(key_input, key_neg)
 }
 
-pub fn cursor_grab_system(
+pub fn cursor_grab_sys(
     mut windows: ResMut<Windows>,
     btn: Res<Input<MouseButton>>,
     key: Res<Input<KeyCode>>,
@@ -119,15 +126,14 @@ pub fn player_input_system(
                 get_axis(&key_input, config.key_forward, config.key_back),
             );
             player_input.flags.clear();
-            if key_input.pressed(config.key_sprint) {
-                player_input.flags |= PlayerInputFlags::Sprint;
-            }
-            if key_input.pressed(config.key_jump) {
-                player_input.flags |= PlayerInputFlags::Jump;
-            }
-            if key_input.just_pressed(config.key_fly) {
-                player_input.flags |= PlayerInputFlags::Fly;
-            }
+            if key_input.pressed(config.key_sprint) { player_input.flags |= PlayerInputFlags::Sprint; }
+            if key_input.pressed(config.key_jump) { player_input.flags |= PlayerInputFlags::Jump; }
+            if key_input.pressed(config.key_fire) { player_input.flags |= PlayerInputFlags::Fire; }
+            if key_input.pressed(config.key_reload) { player_input.flags |= PlayerInputFlags::Reload; }
+            if key_input.just_pressed(config.key_fly) { player_input.flags |= PlayerInputFlags::Fly; }
+            if key_input.pressed(KeyCode::Key1) { player_input.wanted_item_slot = Some(0); }
+            if key_input.pressed(KeyCode::Key2) { player_input.wanted_item_slot = Some(1); }
+            if key_input.pressed(KeyCode::Key3) { player_input.wanted_item_slot = Some(2); }
         }
     }
 }
@@ -149,6 +155,6 @@ impl AssetLoader for ConfigAssetLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["toml"]
+        &["config.toml"]
     }
 }
