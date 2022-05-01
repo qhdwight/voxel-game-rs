@@ -12,6 +12,15 @@ pub enum MoveMode {
 }
 
 #[derive(Component)]
+pub struct LogicalPlayer(pub u8);
+
+#[derive(Component)]
+pub struct RenderPlayer(pub u8);
+
+#[derive(Component)]
+pub struct VisualTransform(pub Transform);
+
+#[derive(Component)]
 pub struct PlayerController {
     pub move_mode: MoveMode,
     pub gravity: f32,
@@ -64,12 +73,13 @@ impl Default for PlayerController {
     }
 }
 
-// ███╗   ███╗ ██████╗ ██████╗ ██╗███████╗██╗   ██╗
-// ████╗ ████║██╔═══██╗██╔══██╗██║██╔════╝╚██╗ ██╔╝
-// ██╔████╔██║██║   ██║██║  ██║██║█████╗   ╚████╔╝
-// ██║╚██╔╝██║██║   ██║██║  ██║██║██╔══╝    ╚██╔╝
-// ██║ ╚═╝ ██║╚██████╔╝██████╔╝██║██║        ██║
-// ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝        ╚═╝
+
+// ██╗      ██████╗  ██████╗ ██╗ ██████╗
+// ██║     ██╔═══██╗██╔════╝ ██║██╔════╝
+// ██║     ██║   ██║██║  ███╗██║██║
+// ██║     ██║   ██║██║   ██║██║██║
+// ███████╗╚██████╔╝╚██████╔╝██║╚██████╗
+// ╚══════╝ ╚═════╝  ╚═════╝ ╚═╝ ╚═════╝
 
 pub fn player_look_sys(
     mut query: Query<(&mut PlayerController, &PlayerInput)>
@@ -82,23 +92,16 @@ pub fn player_look_sys(
 
 pub fn player_move_sys(
     time: Res<Time>,
-    query_pipeline: Res<QueryPipeline>,
-    collider_query: QueryPipelineColliderComponentsQuery,
-    collider_type_query: Query<&ColliderTypeComponent>,
+    physics_context: Res<RapierContext>,
+    sensor_query: Query<&Sensor>,
     mut query: Query<(
-        Entity, &PlayerInput, &mut PlayerController, &ColliderShapeComponent,
-        &RigidBodyPositionComponent, &mut RigidBodyVelocityComponent,
+        Entity, &PlayerInput, &mut PlayerController,
+        &Collider, &mut Transform, &mut Velocity
     )>,
 ) {
     let dt = time.delta_seconds();
 
-    for (entity, input, mut controller, collider, rb_position, mut rb_velocity) in query.iter_mut() {
-        // let input: &PlayerInput = input;
-        // let mut controller: Mut<'_, PlayerController> = controller;
-        // let collider: &ColliderShapeComponent = collider;
-        // let rb_position: &RigidBodyPositionComponent = rb_position;
-        // let mut rb_velocity: Mut<'_, RigidBodyVelocityComponent> = rb_velocity;
-
+    for (entity, input, mut controller, collider, transform, mut vel) in query.iter_mut() {
         if input.flags.contains(PlayerInputFlags::Fly) {
             controller.move_mode = match controller.move_mode {
                 MoveMode::Noclip => MoveMode::Ground,
@@ -109,7 +112,7 @@ pub fn player_move_sys(
         let rot = look_quat(input.pitch, input.yaw);
         let right = rot * Vec3::X;
         let fwd = rot * -Vec3::Z;
-        let pos: Vec3 = rb_position.position.translation.into();
+        let pos = transform.translation;
 
         match controller.move_mode {
             MoveMode::Noclip => {
@@ -127,43 +130,39 @@ pub fn player_move_sys(
                     };
                     controller.velocity = input.movement.normalize() * fly_speed;
                 }
-                let vel = controller.velocity.x * right
+                vel.linvel = controller.velocity.x * right
                     + controller.velocity.y * Vec3::Y
                     + controller.velocity.z * fwd;
-                rb_velocity.linvel = vel.into();
             }
 
             MoveMode::Ground => {
                 if let Some(capsule) = collider.as_capsule() {
+                    let capsule = capsule.raw;
                     let mut init_vel = controller.velocity;
                     let mut end_vel = init_vel;
                     let lateral_speed = init_vel.xz().length();
 
                     // Capsule cast downwards to find ground
                     let mut ground_hit = None;
-                    let collider_set = QueryPipelineColliderComponentsSet(&collider_query);
-                    let cast_capsule = Capsule::new(capsule.segment.a, capsule.segment.b, capsule.radius * 1.0625);
-                    let cast_pos = (pos, rot).into();
-                    let cast_dir = Vec3::new(0.0, -1.0, 0.0).into();
+                    let cast_capsule = Collider::capsule(capsule.segment.a.into(), capsule.segment.b.into(), capsule.radius * 1.0625);
+                    let cast_vel = Vec3::Y * -1.0;
                     let max_dist = 0.125;
                     let groups = InteractionGroups::all();
 
-                    if let Some((_handle, hit)) = query_pipeline.cast_shape(
-                        &collider_set, &cast_pos, &cast_dir, &cast_capsule, max_dist, groups,
+                    if let Some((_handle, hit)) = physics_context.cast_shape(
+                        pos, rot, cast_vel, &cast_capsule, max_dist, groups,
                         // Filter to prevent self-collisions and collisions with non-solid objects
-                        Some(&|hit_collider| {
-                            let hit_ent = hit_collider.entity();
-                            hit_ent != entity && match collider_type_query.get(hit_ent) {
-                                Ok(collider_type) => collider_type.0 == ColliderType::Solid,
-                                Err(_) => false
+                        Some(&|hit_ent| {
+                            hit_ent != entity && match sensor_query.get(hit_ent) {
+                                Ok(sensor) => !sensor.0,
+                                Err(_) => true
                             }
                         }),
                     ) {
                         ground_hit = Some(hit);
                     }
 
-                    let mut wish_dir = input.movement.z * controller.fwd_speed * fwd
-                        + input.movement.x * controller.side_speed * right;
+                    let mut wish_dir = input.movement.z * controller.fwd_speed * fwd + input.movement.x * controller.side_speed * right;
                     let mut wish_speed = wish_dir.length();
                     if wish_speed > 1e-6 { // Avoid division by zero
                         wish_dir /= wish_speed; // Effectively normalize, avoid length computation twice
@@ -217,9 +216,9 @@ pub fn player_move_sys(
                     //         next_translation += normal * ground_hit.toi;
                     //     }
                     // }
-                    let rb_vel = (init_vel + end_vel) * 0.5;
+
                     controller.velocity = end_vel;
-                    rb_velocity.linvel = rb_vel.into();
+                    vel.linvel = (init_vel + end_vel) * 0.5;
                 }
             }
         }
@@ -257,13 +256,16 @@ fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &m
 // ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
 
 pub fn render_player_camera_sys(
-    controller_query: Query<(&PlayerController, &RigidBodyPositionComponent)>,
-    mut camera_query: Query<&mut Transform, With<PerspectiveProjection>>,
+    logical_query: Query<(&Transform, &PlayerController, &LogicalPlayer), With<LogicalPlayer>>,
+    mut render_query: Query<(&mut Transform, &RenderPlayer), Without<LogicalPlayer>>,
 ) {
-    for (controller, rb_position) in controller_query.iter() {
-        for mut transform in camera_query.iter_mut() {
-            transform.translation = Vec3::from(rb_position.position.translation) + Vec3::new(0.0, 2.0, 0.0);
-            transform.rotation = look_quat(controller.pitch, controller.yaw);
+    for (logical_transform, controller, logical_player_id) in logical_query.iter() {
+        for (mut render_transform, render_player_id) in render_query.iter_mut() {
+            if logical_player_id.0 != render_player_id.0 {
+                continue;
+            }
+            render_transform.translation = logical_transform.translation + Vec3::Y * 2.0;
+            render_transform.rotation = look_quat(controller.pitch, controller.yaw);
         }
     }
 }

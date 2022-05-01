@@ -6,14 +6,8 @@ use std::{
 
 use bevy::{
     asset::{AssetLoader, LoadContext, LoadedAsset},
-    core_pipeline::node::MAIN_PASS_DEPENDENCIES,
-    pbr::{DrawMesh, MeshPipeline, MeshPipelineKey, SetMeshBindGroup, SetMeshViewBindGroup},
     prelude::*,
     reflect::TypeUuid,
-    render::{RenderApp, RenderStage},
-    render::render_graph::RenderGraph,
-    render::render_phase::{EntityRenderCommand, SetItemPipeline},
-    render::render_resource::{RenderPipelineDescriptor, SpecializedPipeline},
     utils::{BoxedFuture, HashMap},
 };
 use bevy_rapier3d::prelude::*;
@@ -131,12 +125,12 @@ impl AssetLoader for ConfigAssetLoader {
     }
 }
 
-// ███╗   ███╗ ██████╗ ██████╗ ██╗███████╗██╗   ██╗
-// ████╗ ████║██╔═══██╗██╔══██╗██║██╔════╝╚██╗ ██╔╝
-// ██╔████╔██║██║   ██║██║  ██║██║█████╗   ╚████╔╝
-// ██║╚██╔╝██║██║   ██║██║  ██║██║██╔══╝    ╚██╔╝
-// ██║ ╚═╝ ██║╚██████╔╝██████╔╝██║██║        ██║
-// ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝        ╚═╝
+// ██╗      ██████╗  ██████╗ ██╗ ██████╗
+// ██║     ██╔═══██╗██╔════╝ ██║██╔════╝
+// ██║     ██║   ██║██║  ███╗██║██║
+// ██║     ██║   ██║██║   ██║██║██║
+// ███████╗╚██████╔╝╚██████╔╝██║╚██████╗
+// ╚══════╝ ╚═════╝  ╚═════╝ ╚═╝ ╚═════╝
 
 pub fn modify_equip_state_sys(
     time: Res<Time>,
@@ -145,9 +139,6 @@ pub fn modify_equip_state_sys(
     mut item_query: Query<&mut Item>,
 ) {
     for (input, mut inv) in inv_query.iter_mut() {
-        let input: &PlayerInput = input;
-        let mut inv: Mut<'_, Inventory> = inv;
-
         let has_valid_wanted = input.wanted_item_slot.is_some()
             && inv.item_ents.0[input.wanted_item_slot.unwrap() as usize].is_some();
 
@@ -212,28 +203,13 @@ pub fn modify_item_sys(
 }
 
 pub fn item_pickup_sys(
+    phys_ctx: Res<RapierContext>,
     mut commands: Commands,
-    // query_pipeline: Res<QueryPipeline>,
-    // collider_query: QueryPipelineColliderComponentsQuery,
-    // mut inv_query: Query<(&mut Inventory, &ColliderShapeComponent)>,
-    mut intersection_events: EventReader<IntersectionEvent>,
     mut inv_query: Query<&mut Inventory>,
     mut item_query: Query<&mut Item>,
     mut pickup_query: Query<&mut ItemPickup>,
 ) {
-    // TODO:design use shape cast instead of reading events?
-    // let collider_set = QueryPipelineColliderComponentsSet(&collider_query);
-    //
-    // for (mut inv, player_collider) in inv_query.iter_mut() {
-    //     let mut inv: Mut<'_, Inventory> = inv;
-    //     let player_collider: &ColliderShapeComponent = player_collider;
-    //
-    //     query_pipeline.intersections_with_shape(&collider_set, )
-    // }
-    for intersection_event in intersection_events.iter() {
-        let intersection: &IntersectionEvent = intersection_event;
-        let ent1 = intersection.collider1.entity();
-        let ent2 = intersection.collider2.entity();
+    for (ent1, ent2, _inter) in phys_ctx.intersection_pairs() {
         let mut pickup_ent: Option<Entity> = None;
         let mut player_ent: Option<Entity> = None;
         if pickup_query.get(ent1).is_ok() && inv_query.get(ent2).is_ok() {
@@ -330,9 +306,9 @@ impl Inventory {
         for (slot, &item_ent) in self.item_ents.0.iter().enumerate() {
             let slot = slot as u8;
             let item = match item_ent {
-                Some(item_ent) => item_query.get(item_ent),
-                None => Err(bevy::ecs::query::QueryEntityError::NoSuchEntity),
-            }.ok();
+                Some(item_ent) => item_query.get(item_ent).ok(),
+                None => None,
+            };
             if predicate(item) {
                 return Some(slot);
             }
@@ -412,7 +388,7 @@ pub fn render_inventory_sys(
                         material: materials.gun_material.clone(),
                         transform,
                         visibility: Visibility { is_visible: is_equipped },
-                        ..Default::default()
+                        ..default()
                     });
                 }
             }
