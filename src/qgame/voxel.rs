@@ -1,5 +1,7 @@
-use std::iter::once;
-use std::mem::size_of;
+use std::{
+    iter::once,
+    mem::size_of,
+};
 
 use bevy::{
     core::{cast_slice, Pod, Zeroable},
@@ -118,7 +120,8 @@ impl FromWorld for VoxelsPipeline {
             bind_group_layouts: &[&simplex_layout],
             push_constant_ranges: &[],
         });
-        let simplex_pipeline = render_device.create_compute_pipeline(&ComputePipelineDescriptor {
+        // TODO:arch update to Bevy compute creation when they allow PipelineCache to be used in main world
+        let simplex_pipeline = render_device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("simplex pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
@@ -150,7 +153,7 @@ impl FromWorld for VoxelsPipeline {
             bind_group_layouts: &[&voxels_layout],
             push_constant_ranges: &[],
         });
-        let voxels_pipeline = render_device.create_compute_pipeline(&ComputePipelineDescriptor {
+        let voxels_pipeline = render_device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("voxels pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
@@ -180,7 +183,8 @@ pub fn _sync_added_chunks_system(
 }
 
 pub fn voxel_polygonize_system(
-    mut query: Query<(&Handle<Mesh>, Option<&mut ColliderShapeComponent>, &mut Chunk)>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &Handle<Mesh>, &mut Chunk)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut buffers: ResMut<Buffers>,
     time: Res<Time>,
@@ -190,7 +194,7 @@ pub fn voxel_polygonize_system(
 ) {
     // let now = std::time::Instant::now();
 
-    for (mesh, mut _collider, mut chunk) in query.iter_mut() {
+    for (entity, mesh, mut chunk) in query.iter_mut() {
         buffers.atomics.clear();
         buffers.atomics.push(0);
         buffers.atomics.push(0);
@@ -317,28 +321,8 @@ pub fn voxel_polygonize_system(
             }
         }
 
-        // // TODO:perf inefficient
-        // if let Some(Indices::U32(indices)) = mesh.indices() {
-        //     if let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
-        //         let vertices = vertices.iter().map(|v| (*v).into()).collect();
-        //         let indices = indices.chunks(3).map(|t| t.try_into().unwrap()).collect();
-        //         let shape: ColliderShapeComponent = ColliderShape::trimesh(vertices, indices).into();
-        //
-        //         if collider.is_none() {
-        //             commands.entity(entity)
-        //                 .insert_bundle(ColliderBundle {
-        //                     shape,
-        //                     collider_type: ColliderType::Solid.into(),
-        //                     position: Vec3::new(0.0, 0.0, 0.0).into(),
-        //                     material: ColliderMaterial { friction: 0.7, restitution: 0.3, ..Default::default() }.into(),
-        //                     mass_properties: ColliderMassProps::Density(2.0).into(),
-        //                     ..Default::default()
-        //                 });
-        //         } else {
-        //             commands.entity(entity).insert(shape);
-        //         }
-        //     }
-        // }
+        // TODO:perf inefficient
+        commands.entity(entity).insert(Collider::bevy_mesh(mesh).unwrap());
     }
 
     // println!("Elapsed: {:.2?}", now.elapsed());
