@@ -203,7 +203,9 @@ pub fn voxel_polygonize_system(
         buffers.points.clear();
         for x in 0..CHUNK_SZ {
             for y in 0..CHUNK_SZ {
-                buffers.points.push(0.05 * Vec2::new(x as f32 + time, y as f32 + time));
+                let x = x as f32;
+                let y = y as f32;
+                buffers.points.push(0.1 * Vec2::new(x + time, y + time));
             }
         }
 
@@ -240,7 +242,7 @@ pub fn voxel_polygonize_system(
                 let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
                 pass.set_pipeline(&pipeline.simplex_pipeline);
                 pass.set_bind_group(0, &binding_groups.simplex, &[]);
-                pass.dispatch((CHUNK_SZ / 32) as u32, (CHUNK_SZ / 32) as u32, 1);
+                pass.dispatch(1, 1, 1);
             }
             render_queue.submit(once(command_encoder.finish()));
 
@@ -250,13 +252,7 @@ pub fn voxel_polygonize_system(
                     for x in 0..CHUNK_SZ {
                         let noise01 = (buffers.heights.as_slice()[x + z * CHUNK_SZ] + 1.0) * 0.5;
                         let height = noise01 * 4.0 + 8.0 - (y as f32);
-                        let mut density = 0.0;
-
-                        if height > 1.0 {
-                            density = 1.0;
-                        } else if height > 0.0 {
-                            density = height;
-                        }
+                        let mut density = height.clamp(0.0, 1.0);
                         // voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
                         //     flags: if z == (noise01 * 4.0) as usize { 1 } else { 0 },
                         //     density: 0.0,
@@ -322,7 +318,7 @@ pub fn voxel_polygonize_system(
         }
 
         // TODO:perf inefficient
-        commands.entity(entity).insert(Collider::bevy_mesh(mesh).unwrap());
+        // commands.entity(entity).insert(Collider::bevy_mesh(mesh).unwrap());
     }
 
     // println!("Elapsed: {:.2?}", now.elapsed());

@@ -8,19 +8,19 @@ struct VoxelBuffer {
 };
 
 struct VertexBuffer {
-    data: array<vec3<f32>>;
+    data: array< vec3<f32> >;
 };
 
 struct NormalBuffer {
-    data: array<vec3<f32>>;
+    data: array< vec3<f32> >;
 };
 
 struct IndexBuffer {
-    data: array<u32>;
+    data: array< u32>;
 };
 
 struct UvBuffer {
-    data: array<vec2<f32>>;
+    data: array< vec2<f32> >;
 };
 
 struct Atomics {
@@ -68,18 +68,21 @@ fn get_flat_index(pos: vec3<i32>) -> u32 {
 }
 
 fn get_voxel_density(pos: vec3<i32>) -> f32 {
-    var density: f32 = 0.0;
-    if (pos.x >= 0 && pos.x < chunk_sz
-     && pos.y >= 0 && pos.y < chunk_sz
-     && pos.z >= 0 && pos.z < chunk_sz) {
-        density = in_voxels.data[get_flat_index(pos)].density;
-    }
-    return density;
+    return select(
+        0.0,
+        in_voxels.data[get_flat_index(pos)].density,
+        pos.x >= 0 && pos.x < chunk_sz &&
+        pos.y >= 0 && pos.y < chunk_sz &&
+        pos.z >= 0 && pos.z < chunk_sz
+    );
 }
 
 fn interp_vertex(p1: vec3<f32>, p2: vec3<f32>, v1: f32, v2: f32) -> vec3<f32> {
-    let mu = (0.5 - v1) / (v2 - v1);
-    return p1 + mu * (p2 - p1);
+    return select(
+        mix(p1, p2, (0.5 - v1) / (v2 - v1)),
+        p1,
+        abs(v1 - v2) < 0.00001
+    );
 }
 
 [[stage(compute), workgroup_size(8, 8, 8)]]
@@ -111,7 +114,7 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
             vec3<f32>(pos + smooth_adj_offsets[4u]),
             vec3<f32>(pos + smooth_adj_offsets[5u]),
             vec3<f32>(pos + smooth_adj_offsets[6u]),
-            vec3<f32>(pos + smooth_adj_offsets[7u]),
+            vec3<f32>(pos + smooth_adj_offsets[7u])
         );
         let densities = array<f32, 8>(
             get_voxel_density(pos + smooth_adj_offsets[0u]),
@@ -121,7 +124,7 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
             get_voxel_density(pos + smooth_adj_offsets[4u]),
             get_voxel_density(pos + smooth_adj_offsets[5u]),
             get_voxel_density(pos + smooth_adj_offsets[6u]),
-            get_voxel_density(pos + smooth_adj_offsets[7u]),
+            get_voxel_density(pos + smooth_adj_offsets[7u])
         );
         cube_idx = cube_idx | u32(densities[0u] < 0.5) * (1u << 0u);
         cube_idx = cube_idx | u32(densities[1u] < 0.5) * (1u << 1u);
@@ -148,7 +151,7 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
             f32((uniform_edge_table.data[cube_idx] & (1u <<  8u)) != 0u) * interp_vertex(positions[0u], positions[4u], densities[0u], densities[4u]),
             f32((uniform_edge_table.data[cube_idx] & (1u <<  9u)) != 0u) * interp_vertex(positions[1u], positions[5u], densities[1u], densities[5u]),
             f32((uniform_edge_table.data[cube_idx] & (1u << 10u)) != 0u) * interp_vertex(positions[2u], positions[6u], densities[2u], densities[6u]),
-            f32((uniform_edge_table.data[cube_idx] & (1u << 11u)) != 0u) * interp_vertex(positions[3u], positions[7u], densities[3u], densities[7u]),
+            f32((uniform_edge_table.data[cube_idx] & (1u << 11u)) != 0u) * interp_vertex(positions[3u], positions[7u], densities[3u], densities[7u])
         );
 
         var tri_idx: u32 = 0u;
@@ -189,7 +192,7 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
                 vec3<f32>(0.5, -0.5, -0.5),
                 vec3<f32>(0.5,  0.5, -0.5),
                 vec3<f32>(0.5,  0.5,  0.5),
-                vec3<f32>(0.5, -0.5,  0.5),
+                vec3<f32>(0.5, -0.5,  0.5)
             ),
             array<vec3<f32>, 4>(
                 vec3<f32>(-0.5, -0.5,  0.5),
@@ -220,7 +223,7 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
                 vec3<f32>(-0.5,  0.5, -0.5),
                 vec3<f32>( 0.5,  0.5, -0.5),
                 vec3<f32>( 0.5, -0.5, -0.5)
-            ),
+            )
         );
         var block_adj_offsets = array<vec3<i32>, 6>(
             vec3<i32>( 1,  0,  0),
@@ -228,7 +231,7 @@ fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
             vec3<i32>( 0,  1,  0),
             vec3<i32>( 0, -1,  0),
             vec3<i32>( 0,  0,  1),
-            vec3<i32>( 0,  0, -1),
+            vec3<i32>( 0,  0, -1)
         );
 
         var dir: u32 = 0u;  

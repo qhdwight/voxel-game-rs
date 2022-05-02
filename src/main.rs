@@ -50,7 +50,7 @@ fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(WindowDescriptor {
-            title: String::from("QGame"),
+            title: String::from("Voxel Game"),
             ..default()
         })
         .insert_resource(AmbientLight {
@@ -62,7 +62,7 @@ fn main() {
             ..default()
         })
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
-        .add_plugin(RapierDebugRenderPlugin::default())
+        // .add_plugin(RapierDebugRenderPlugin::default())
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(InventoryPlugin)
