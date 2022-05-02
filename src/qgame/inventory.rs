@@ -456,17 +456,20 @@ pub fn render_inventory_sys(
                 if let Ok(item) = item_query.get(*item_ent) {
                     let is_equipped = inv.equipped_slot == Some(item.inv_slot);
                     let mut transform = Transform::default();
-                    let mesh_handle = asset_server.load(format!("models/{}.gltf#Mesh0/Primitive0", item.name).as_str());
+                    let item_scene_handle = asset_server.load(format!("models/{}.glb#Scene0", item.name).as_str());
                     if is_equipped {
                         transform = camera_query.single().mul_transform(Transform::from_xyz(0.4, -0.3, -1.0));
                     }
-                    commands.entity(*item_ent).insert_bundle(PbrBundle {
-                        mesh: mesh_handle.clone(),
-                        material: materials.gun_material.clone(),
-                        transform,
-                        visibility: Visibility { is_visible: is_equipped },
-                        ..default()
+                    commands.entity(*item_ent).with_children(|children| {
+                        children.spawn_scene(item_scene_handle);
                     });
+                    // commands.entity(*item_ent).insert_bundle(PbrBundle {
+                    //     mesh: mesh_handle.clone(),
+                    //     material: materials.gun_material.clone(),
+                    //     transform,
+                    //     visibility: Visibility { is_visible: is_equipped },
+                    //     ..default()
+                    // });
                 }
             }
         }

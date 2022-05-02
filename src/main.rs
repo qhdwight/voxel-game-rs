@@ -31,20 +31,10 @@ pub struct DefaultMaterials {
 }
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
-pub enum Modify {
-    Set,
-    Equip,
-    Item,
-    Look,
-    Move,
-    Pickup,
-}
+struct Logic;
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
-pub enum Render {
-    Set,
-    Look,
-}
+struct Render;
 
 fn main() {
     App::new()
@@ -78,25 +68,18 @@ fn main() {
         .add_system(cursor_grab_sys)
         .add_system(update_fps_text_sys)
         .add_system_set(SystemSet::new()
-            .label(Modify::Set)
-            .with_system(player_look_sys
-                .label(Modify::Look))
-            .with_system(player_move_sys
-                .label(Modify::Move).after(Modify::Look))
-            .with_system(modify_equip_state_sys
-                .label(Modify::Equip).after(Modify::Move))
-            .with_system(modify_item_sys
-                .label(Modify::Item).after(Modify::Equip))
-            .with_system(item_pickup_sys
-                .label(Modify::Pickup).after(Modify::Item))
+            .label(Logic)
+            .with_system(player_look_sys)
+            .with_system(player_move_sys.after(player_look_sys))
+            .with_system(modify_equip_state_sys.after(player_move_sys))
+            .with_system(modify_item_sys.after(modify_equip_state_sys))
+            .with_system(item_pickup_sys.after(modify_item_sys))
         )
         .add_system_set(SystemSet::new()
-            .label(Render::Set).after(Modify::Set)
+            .label(Render).after(Logic)
             .with_system(item_pickup_animate_sys)
-            .with_system(render_player_camera_sys
-                .label(Render::Look))
-            .with_system(render_inventory_sys
-                .after(Render::Look))
+            .with_system(render_player_camera_sys)
+            .with_system(render_inventory_sys.after(render_player_camera_sys))
             .with_system(update_hud_system)
         )
         .run();
@@ -105,6 +88,7 @@ fn main() {
 fn setup_sys(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
+    mut scene_spawner: ResMut<SceneSpawner>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // println!("{}", ron::ser::to_string_pretty(&Config::default(), ron::ser::PrettyConfig::default()).unwrap());
@@ -160,21 +144,21 @@ fn setup_sys(
         ..default()
     });
 
-    // let rifle_handle = asset_server.load("models/rifle.gltf#Mesh0/Primitive0");
-    // commands.spawn()
-    //     .insert(GlobalTransform::default())
-    //     .with_children(|parent| {
-    //         parent.spawn_bundle(PbrBundle {
-    //             mesh: rifle_handle.clone(),
-    //             material: gun_material.clone(),
-    //             ..default()
-    //         })
-    //             .insert(ItemPickupVisual::default());
-    //     })
-    //     .insert(Collider::ball(0.5))
-    //     .insert(Sensor(true))
-    //     .insert(Transform::from_xyz(0.0, 20.0, 8.0))
-    //     .insert(ItemPickup { item_name: ItemName::from("rifle") });
+    let rifle_scene_handle = asset_server.load("models/rifle.glb#Scene0");
+    commands.spawn()
+        .with_children(|parent| {
+            parent.spawn_scene(rifle_scene_handle)
+                .spawn()
+                .insert(ItemPickupVisual::default());
+        })
+        .insert(Collider::ball(0.5))
+        .insert(Sensor(true))
+        .insert_bundle(TransformBundle {
+            local: Transform::from_xyz(0.0, 20.0, 8.0),
+            global: GlobalTransform::identity(),
+        }
+        )
+        .insert(ItemPickup { item_name: ItemName::from("rifle") });
 
     commands.insert_resource(DefaultMaterials { gun_material });
 
