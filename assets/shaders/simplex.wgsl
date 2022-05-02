@@ -1,5 +1,5 @@
 struct PointBuffer {
-    data: array<vec2<f32>>;
+    data: array< vec2<f32> >;
 };
 
 struct HeightBuffer {
@@ -71,6 +71,6 @@ fn simplexNoise2(v: vec2<f32>) -> f32 {
 [[stage(compute), workgroup_size(32, 32, 1)]]
 fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
     let index = invocation_id.x + invocation_id.y * 32u;
-    let point = in_points.data[index];
-    out_heights.data[index] = perlinNoise2(point);
+    let base_point = in_points.data[index];
+    out_heights.data[index] = perlinNoise2(base_point);
 }
