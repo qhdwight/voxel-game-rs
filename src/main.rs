@@ -6,6 +6,7 @@ use std::{
 };
 
 use bevy::{
+    app::AppLabel,
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
     render::{
@@ -53,6 +54,7 @@ fn main() {
         })
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
         // .add_plugin(RapierDebugRenderPlugin::default())
+        .add_plugin(GameRenderPlugin)
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(InventoryPlugin)
@@ -67,16 +69,14 @@ fn main() {
         )
         .add_system(cursor_grab_sys)
         .add_system(update_fps_text_sys)
-        .add_system_set(SystemSet::new()
-            .label(Logic)
+        .add_system_set(SystemSet::new().label(Logic)
             .with_system(player_look_sys)
             .with_system(player_move_sys.after(player_look_sys))
             .with_system(modify_equip_state_sys.after(player_move_sys))
             .with_system(modify_item_sys.after(modify_equip_state_sys))
             .with_system(item_pickup_sys.after(modify_item_sys))
         )
-        .add_system_set(SystemSet::new()
-            .label(Render).after(Logic)
+        .add_system_set(SystemSet::new().label(Render).after(Logic)
             .with_system(item_pickup_animate_sys)
             .with_system(render_player_camera_sys)
             .with_system(render_inventory_sys.after(render_player_camera_sys))
@@ -350,3 +350,31 @@ fn update_hud_system(
         }
     }
 }
+
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, StageLabel)]
+pub enum GameStage {
+    Extract,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, AppLabel)]
+pub struct GameRenderApp;
+
+#[derive(Default)]
+pub struct GameRenderPlugin;
+
+impl Plugin for GameRenderPlugin {
+    fn build(&self, app: &mut App) {
+        let mut render_app = App::new();
+        render_app.add_stage(GameStage::Extract, SystemStage::parallel());
+        app.add_sub_app(GameRenderApp, render_app, move |app_word, render_app| {
+            let extract = render_app
+                .schedule
+                .get_stage_mut::<GameStage>(&GameStage::Extract)
+                .unwrap();
+            extract.run(app_word);
+            render_app.world.clear_entities();
+        });
+    }
+}
+
