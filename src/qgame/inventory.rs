@@ -10,11 +10,12 @@ use bevy::{
     reflect::TypeUuid,
     utils::{BoxedFuture, HashMap},
 };
+use bevy::asset::Asset;
 use bevy_rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String;
 
-use crate::{DefaultMaterials, PlayerInput, PlayerInputFlags};
+use crate::*;
 
 const EQUIPPING_STATE: &str = "equipping";
 const EQUIPPED_STATE: &str = "equipped";
@@ -74,9 +75,6 @@ pub struct ItemPickup {
     pub item_name: ItemName,
 }
 
-#[derive(Component, Default)]
-pub struct ItemPickupVisual;
-
 #[derive(Component)]
 pub struct Gun {
     pub ammo: u16,
@@ -85,9 +83,6 @@ pub struct Gun {
 
 #[derive(Debug)]
 pub struct Items(pub [Option<Entity>; 10]);
-
-#[derive(Component)]
-pub struct ItemVisual;
 
 #[derive(Component, Debug)]
 pub struct Inventory {
@@ -105,6 +100,14 @@ impl Plugin for InventoryPlugin {
         app
             .add_asset::<ItemProps>()
             .init_asset_loader::<ItemPropAssetLoader>();
+        app
+            .sub_app_mut(VisualsApp)
+            .add_system_to_stage(VisualStage::Extract, extract_item_pickups)
+            .add_system_to_stage(VisualStage::Extract, extract_inventory_sys.after(extract_player_camera_sys));
+        app
+            .add_system(modify_equip_state_sys.after(player_move_sys))
+            .add_system(modify_item_sys.after(modify_equip_state_sys))
+            .add_system(item_pickup_sys.after(modify_item_sys));
         // println!("{}", ron::ser::to_string_pretty(&ItemProps {
         //     name: ItemName::from("Rifle"),
         //     move_factor: 1.0,
@@ -435,55 +438,60 @@ impl Inventory {
     }
 }
 
-// ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗
-// ██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗
-// ██████╔╝█████╗  ██╔██╗ ██║██║  ██║█████╗  ██████╔╝
-// ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗
-// ██║  ██║███████╗██║ ╚████║██████╔╝███████╗██║  ██║
-// ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
+// ██╗   ██╗██╗███████╗██╗   ██╗ █████╗ ██╗
+// ██║   ██║██║██╔════╝██║   ██║██╔══██╗██║
+// ██║   ██║██║███████╗██║   ██║███████║██║
+// ╚██╗ ██╔╝██║╚════██║██║   ██║██╔══██║██║
+//  ╚████╔╝ ██║███████║╚██████╔╝██║  ██║███████╗
+//   ╚═══╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝
 
-pub fn render_inventory_sys(
+pub fn extract_inventory_sys(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    materials: Res<DefaultMaterials>,
     item_query: Query<&mut Item>,
     player_query: Query<&Inventory>,
     camera_query: Query<&Transform, With<PerspectiveProjection>>,
 ) {
-    for inv in player_query.iter() {
-        for item in inv.item_ents.0.iter() {
-            if let Some(item_ent) = item {
-                if let Ok(item) = item_query.get(*item_ent) {
-                    let is_equipped = inv.equipped_slot == Some(item.inv_slot);
-                    let mut transform = Transform::default();
-                    let item_scene_handle = asset_server.load(format!("models/{}.glb#Scene0", item.name).as_str());
-                    if is_equipped {
-                        transform = camera_query.single().mul_transform(Transform::from_xyz(0.4, -0.3, -1.0));
-                    }
-                    commands.entity(*item_ent).with_children(|children| {
-                        children.spawn_scene(item_scene_handle);
-                    });
-                    // commands.entity(*item_ent).insert_bundle(PbrBundle {
-                    //     mesh: mesh_handle.clone(),
-                    //     material: materials.gun_material.clone(),
-                    //     transform,
-                    //     visibility: Visibility { is_visible: is_equipped },
-                    //     ..default()
-                    // });
-                }
-            }
-        }
-    }
+    // for inv in player_query.iter() {
+    //     for item in inv.item_ents.0.iter() {
+    //         if let Some(item_ent) = item {
+    //             if let Ok(item) = item_query.get(*item_ent) {
+    //                 let is_equipped = inv.equipped_slot == Some(item.inv_slot);
+    //                 let mut transform = Transform::default();
+    //                 let item_scene_handle = asset_server.load(format!("models/{}.glb#Scene0", item.name).as_str());
+    //                 if is_equipped {
+    //                     transform = camera_query.single().mul_transform(Transform::from_xyz(0.4, -0.3, -1.0));
+    //                 }
+    //                 commands.get_or_spawn(*item_ent).with_children(|children| {
+    //                     children.spawn_scene(item_scene_handle);
+    //                 });
+    //             }
+    //         }
+    //     }
+    // }
 }
 
-pub fn item_pickup_animate_sys(
+pub fn extract_item_pickups(
+    mut commands: Commands,
     time: Res<Time>,
-    mut pickup_query: Query<&mut Transform, With<ItemPickupVisual>>,
+    asset_server: Res<AssetServer>,
+    mut pickup_query: Query<(Entity, &ItemPickup, &mut Transform)>,
 ) {
-    for mut transform in pickup_query.iter_mut() {
-        let dr = TAU * time.delta_seconds() * 0.125;
-        transform.rotate(Quat::from_axis_angle(Vec3::Y, dr));
-        let height = f32::sin(time.time_since_startup().as_secs_f32()) * 0.125;
-        transform.translation = Vec3::new(0.0, height, 0.0);
-    }
+    // for (entity, item_pickup, mut transform) in pickup_query.iter_mut() {
+    //     let dr = TAU * time.delta_seconds() * 0.125;
+    //     transform.rotate(Quat::from_axis_angle(Vec3::Y, dr));
+    //     let height = f32::sin(time.time_since_startup().as_secs_f32()) * 0.125;
+    //     transform.translation = Vec3::new(0.0, height, 0.0);
+    //     let rifle_scene_handle = asset_server.load(format!("models/{}.glb#Scene0", item_pickup.item_name).as_str());
+    //     commands.get_or_spawn(entity)
+    //         .with_children(|parent| {
+    //             parent.spawn_scene(rifle_scene_handle);
+    //         })
+    //         .insert(Collider::ball(0.5))
+    //         .insert(Sensor(true))
+    //         .insert_bundle(TransformBundle {
+    //             local: Transform::from_xyz(0.0, 20.0, 8.0),
+    //             global: GlobalTransform::identity(),
+    //         });
+    // }
 }

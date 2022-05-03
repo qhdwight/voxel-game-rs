@@ -7,14 +7,24 @@ use std::{
 
 use bevy::{
     app::AppLabel,
+    asset::AssetPlugin,
+    core::CorePlugin,
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
+    diagnostic::DiagnosticsPlugin,
+    input::InputPlugin,
+    log::LogPlugin,
     prelude::*,
     render::{
         mesh::{Indices, VertexAttributeValues},
         render_resource::*,
     },
+    scene::ScenePlugin,
     window::WindowDescriptor,
+    window::WindowPlugin,
 };
+use bevy::core_pipeline::CorePipelinePlugin;
+use bevy::render::RenderPlugin;
+use bevy::winit::WinitPlugin;
 use bevy_rapier3d::prelude::*;
 
 use qgame::*;
@@ -27,16 +37,6 @@ struct TopRightText;
 #[derive(Component)]
 struct PlayerHudText;
 
-pub struct DefaultMaterials {
-    pub gun_material: Handle<StandardMaterial>,
-}
-
-#[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
-struct Logic;
-
-#[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
-struct Render;
-
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
@@ -48,48 +48,81 @@ fn main() {
             color: Color::WHITE,
             brightness: 0.25,
         })
-        .add_plugins(DefaultPlugins)
+        .add_plugin(LogPlugin::default())
+        .add_plugin(CorePlugin::default())
+        .add_plugin(TransformPlugin::default())
+        .add_plugin(HierarchyPlugin::default())
+        .add_plugin(DiagnosticsPlugin::default())
+        // .add_plugin(InputPlugin::default())
+        .add_plugin(AssetPlugin::default())
+        .add_plugin(ScenePlugin::default())
         .insert_resource(RapierConfiguration {
             ..default()
         })
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
         // .add_plugin(RapierDebugRenderPlugin::default())
-        .add_plugin(GameRenderPlugin)
+        .add_plugin(VisualsPlugin)
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(InventoryPlugin)
+        .add_plugin(ControllerPlugin)
         .add_asset::<Config>()
         .init_asset_loader::<ConfigAssetLoader>()
         .add_startup_system(setup_sys)
-        .add_startup_system(spawn_ui_sys)
-        .add_startup_system(spawn_voxel_sys)
+        // .add_startup_system(spawn_ui_sys)
+        // .add_startup_system(spawn_voxel_sys)
         .add_startup_system(spawn_player_sys)
-        .add_system_set_to_stage(CoreStage::PreUpdate, SystemSet::new()
-            .with_system(player_input_system),
-        )
         .add_system(cursor_grab_sys)
         .add_system(update_fps_text_sys)
-        .add_system_set(SystemSet::new().label(Logic)
-            .with_system(player_look_sys)
-            .with_system(player_move_sys.after(player_look_sys))
-            .with_system(modify_equip_state_sys.after(player_move_sys))
-            .with_system(modify_item_sys.after(modify_equip_state_sys))
-            .with_system(item_pickup_sys.after(modify_item_sys))
-        )
-        .add_system_set(SystemSet::new().label(Render).after(Logic)
-            .with_system(item_pickup_animate_sys)
-            .with_system(render_player_camera_sys)
-            .with_system(render_inventory_sys.after(render_player_camera_sys))
-            .with_system(update_hud_system)
-        )
         .run();
 }
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, StageLabel)]
+pub enum VisualStage {
+    Extract,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, AppLabel)]
+pub struct VisualsApp;
+
+pub struct VisualsPlugin;
+
+impl Plugin for VisualsPlugin {
+    fn build(&self, app: &mut App) {
+        let mut render_app = App::new();
+        render_app
+            .add_plugin(CorePlugin::default())
+            .add_plugin(TransformPlugin::default())
+            .add_plugin(HierarchyPlugin::default())
+            .add_plugin(InputPlugin::default())
+            .add_plugin(WindowPlugin::default())
+            .add_plugin(AssetPlugin::default())
+            .add_plugin(ScenePlugin::default())
+            .add_plugin(WinitPlugin::default())
+            .add_plugin(RenderPlugin::default())
+            .add_plugin(CorePipelinePlugin::default())
+            .add_stage(VisualStage::Extract, SystemStage::parallel());
+        app.add_sub_app(VisualsApp, render_app, move |app_world, render_app| {
+            let meta_len = app_world.entities().meta_len();
+            render_app
+                .world
+                .entities()
+                .reserve_entities(meta_len as u32);
+            unsafe { render_app.world.entities_mut() }.flush_as_invalid();
+            let extract = render_app
+                .schedule
+                .get_stage_mut::<SystemStage>(&VisualStage::Extract)
+                .unwrap();
+            extract.run(app_world);
+            render_app.world.clear_entities();
+        });
+    }
+}
+
 
 fn setup_sys(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut scene_spawner: ResMut<SceneSpawner>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // println!("{}", ron::ser::to_string_pretty(&Config::default(), ron::ser::PrettyConfig::default()).unwrap());
 
@@ -137,30 +170,25 @@ fn setup_sys(
     //         });
     // }
 
-    let gun_material = materials.add(StandardMaterial {
-        base_color: Color::DARK_GRAY,
-        metallic: 0.05,
-        perceptual_roughness: 0.1,
-        ..default()
-    });
+    // let gun_material = materials.add(StandardMaterial {
+    //     base_color: Color::DARK_GRAY,
+    //     metallic: 0.05,
+    //     perceptual_roughness: 0.1,
+    //     ..default()
+    // });
 
     let rifle_scene_handle = asset_server.load("models/rifle.glb#Scene0");
     commands.spawn()
         .with_children(|parent| {
-            parent.spawn_scene(rifle_scene_handle)
-                .spawn()
-                .insert(ItemPickupVisual::default());
+            parent.spawn_scene(rifle_scene_handle);
         })
         .insert(Collider::ball(0.5))
         .insert(Sensor(true))
         .insert_bundle(TransformBundle {
             local: Transform::from_xyz(0.0, 20.0, 8.0),
             global: GlobalTransform::identity(),
-        }
-        )
+        })
         .insert(ItemPickup { item_name: ItemName::from("rifle") });
-
-    commands.insert_resource(DefaultMaterials { gun_material });
 
     asset_server.watch_for_changes().unwrap()
 }
@@ -272,30 +300,6 @@ fn spawn_player_sys(mut commands: Commands) {
             ..default()
         })
         .insert(inv);
-
-    commands.spawn()
-        .insert_bundle(PerspectiveCameraBundle::new_3d())
-        .insert(RenderPlayer(0));
-}
-
-pub struct Buffers {
-    // Place edge table and triangle table in uniform buffer
-    // They are too large to have inline in the shader
-    edge_table: Buffer,
-    tri_table: Buffer,
-    points: BufVec<Vec2>,
-    heights: BufVec<f32>,
-    voxels: Buffer,
-    vertices: BufVec<Vec4>,
-    normals: BufVec<Vec4>,
-    uvs: BufVec<Vec2>,
-    indices: BufVec<u32>,
-    atomics: BufVec<u32>,
-}
-
-struct BindingGroups {
-    simplex: BindGroup,
-    voxels: BindGroup,
 }
 
 fn update_fps_text_sys(
@@ -350,31 +354,3 @@ fn update_hud_system(
         }
     }
 }
-
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, StageLabel)]
-pub enum GameStage {
-    Extract,
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, AppLabel)]
-pub struct GameRenderApp;
-
-#[derive(Default)]
-pub struct GameRenderPlugin;
-
-impl Plugin for GameRenderPlugin {
-    fn build(&self, app: &mut App) {
-        let mut render_app = App::new();
-        render_app.add_stage(GameStage::Extract, SystemStage::parallel());
-        app.add_sub_app(GameRenderApp, render_app, move |app_word, render_app| {
-            let extract = render_app
-                .schedule
-                .get_stage_mut::<GameStage>(&GameStage::Extract)
-                .unwrap();
-            extract.run(app_word);
-            render_app.world.clear_entities();
-        });
-    }
-}
-

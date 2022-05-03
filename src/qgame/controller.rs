@@ -4,21 +4,20 @@ use bevy::{
 };
 use bevy_rapier3d::prelude::*;
 
-use crate::{PlayerInput, PlayerInputFlags};
+use crate::*;
 
 pub enum MoveMode {
     Noclip,
     Ground,
 }
 
+pub struct ControllerPlugin;
+
 #[derive(Component)]
 pub struct LogicalPlayer(pub u8);
 
 #[derive(Component)]
-pub struct RenderPlayer(pub u8);
-
-#[derive(Component)]
-pub struct VisualTransform(pub Transform);
+pub struct VisualPlayer(pub u8);
 
 #[derive(Component)]
 pub struct PlayerController {
@@ -70,6 +69,17 @@ impl Default for PlayerController {
             stop_speed: 1.0,
             jump_speed: 8.5,
         }
+    }
+}
+
+impl Plugin for ControllerPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .sub_app_mut(VisualsApp)
+            .add_system_to_stage(VisualStage::Extract, extract_player_camera_sys);
+        app
+            .add_system(player_look_sys)
+            .add_system(player_move_sys.after(player_look_sys));
     }
 }
 
@@ -248,25 +258,27 @@ fn accelerate(wish_dir: Vec3, wish_speed: f32, accel: f32, dt: f32, velocity: &m
     velocity.z += wish_dir.z;
 }
 
-// ██████╗ ███████╗███╗   ██╗██████╗ ███████╗██████╗
-// ██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗
-// ██████╔╝█████╗  ██╔██╗ ██║██║  ██║█████╗  ██████╔╝
-// ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗
-// ██║  ██║███████╗██║ ╚████║██████╔╝███████╗██║  ██║
-// ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
 
-pub fn render_player_camera_sys(
-    logical_query: Query<(&Transform, &PlayerController, &LogicalPlayer), With<LogicalPlayer>>,
-    mut render_query: Query<(&mut Transform, &RenderPlayer), Without<LogicalPlayer>>,
+// ██╗   ██╗██╗███████╗██╗   ██╗ █████╗ ██╗
+// ██║   ██║██║██╔════╝██║   ██║██╔══██╗██║
+// ██║   ██║██║███████╗██║   ██║███████║██║
+// ╚██╗ ██╔╝██║╚════██║██║   ██║██╔══██║██║
+//  ╚████╔╝ ██║███████║╚██████╔╝██║  ██║███████╗
+//   ╚═══╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝
+
+pub fn extract_player_camera_sys(
+    mut commands: Commands,
+    logical_query: Query<(Entity, &Transform, &PlayerController)>,
 ) {
-    for (logical_transform, controller, logical_player_id) in logical_query.iter() {
-        for (mut render_transform, render_player_id) in render_query.iter_mut() {
-            if logical_player_id.0 != render_player_id.0 {
-                continue;
-            }
-            render_transform.translation = logical_transform.translation + Vec3::Y * 2.0;
-            render_transform.rotation = look_quat(controller.pitch, controller.yaw);
-        }
+    for (entity, logical_transform, controller) in logical_query.iter() {
+        commands.get_or_spawn(entity)
+            .insert_bundle(PerspectiveCameraBundle {
+                transform: logical_transform
+                    .with_translation(Vec3::Y * 2.0)
+                    .with_rotation(look_quat(controller.pitch, controller.yaw)),
+                ..PerspectiveCameraBundle::new_3d()
+            })
+            .insert(VisualPlayer(0));
     }
 }
 

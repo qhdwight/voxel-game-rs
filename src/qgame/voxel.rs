@@ -70,13 +70,34 @@ pub struct VoxelsPipeline {
     voxels_layout: BindGroupLayout,
 }
 
+pub struct Buffers {
+    // Place edge table and triangle table in uniform buffer
+    // They are too large to have inline in the shader
+    edge_table: Buffer,
+    tri_table: Buffer,
+    points: BufVec<Vec2>,
+    heights: BufVec<f32>,
+    voxels: Buffer,
+    vertices: BufVec<Vec4>,
+    normals: BufVec<Vec4>,
+    uvs: BufVec<Vec2>,
+    indices: BufVec<u32>,
+    atomics: BufVec<u32>,
+}
+
+struct BindingGroups {
+    simplex: BindGroup,
+    voxels: BindGroup,
+}
+
 pub struct VoxelsPlugin;
 
 impl Plugin for VoxelsPlugin {
     fn build(&self, app: &mut App) {
         app
+            .sub_app_mut(VisualsApp)
             .init_resource::<VoxelsPipeline>()
-            .add_system_to_stage(CoreStage::PreUpdate, voxel_polygonize_system);
+            .add_system_to_stage(VisualStage::Extract, voxel_polygonize_system);
     }
 }
 
@@ -252,7 +273,7 @@ pub fn voxel_polygonize_system(
                     for x in 0..CHUNK_SZ {
                         let noise01 = (buffers.heights.as_slice()[x + z * CHUNK_SZ] + 1.0) * 0.5;
                         let height = noise01 * 4.0 + 8.0 - (y as f32);
-                        let mut density = height.clamp(0.0, 1.0);
+                        let density = height.clamp(0.0, 1.0);
                         // voxels.0[x + y * CHUNK_SZ + z * CHUNK_SZ_2] = Voxel {
                         //     flags: if z == (noise01 * 4.0) as usize { 1 } else { 0 },
                         //     density: 0.0,
