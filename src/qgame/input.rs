@@ -7,6 +7,7 @@ use bevy::{
     reflect::TypeUuid,
     utils::BoxedFuture,
 };
+use bevy::window::CursorGrabMode;
 use flagset::{flags, FlagSet};
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +46,11 @@ pub struct Config {
     pub key_crouch: KeyCode,
     pub key_fire: KeyCode,
     pub key_reload: KeyCode,
+}
+
+#[derive(Resource)]
+pub struct ConfigState {
+    pub(crate) handle: Handle<Config>,
 }
 
 impl Default for Config {
@@ -86,11 +92,11 @@ pub fn cursor_grab_sys(
 ) {
     let window = windows.get_primary_mut().unwrap();
     if btn.just_pressed(MouseButton::Left) {
-        window.set_cursor_lock_mode(true);
+        window.set_cursor_grab_mode(CursorGrabMode::Locked);
         window.set_cursor_visibility(false);
     }
     if key.just_pressed(KeyCode::Escape) {
-        window.set_cursor_lock_mode(false);
+        window.set_cursor_grab_mode(CursorGrabMode::Confined);
         window.set_cursor_visibility(true);
     }
 }
@@ -98,12 +104,12 @@ pub fn cursor_grab_sys(
 pub fn player_input_system(
     key_input: Res<Input<KeyCode>>,
     config: Res<Assets<Config>>,
-    config_handle: Res<Handle<Config>>,
+    config_state: Res<ConfigState>,
     mut windows: ResMut<Windows>,
     mut mouse_events: EventReader<MouseMotion>,
     mut query: Query<&mut PlayerInput>)
 {
-    if let Some(config) = config.get(config_handle.as_ref()) {
+    if let Some(config) = config.get(&config_state.handle) {
         for mut player_input in query.iter_mut() {
             let window = windows.get_primary_mut().unwrap();
             if window.is_focused() {

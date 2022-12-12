@@ -63,6 +63,7 @@ pub struct Voxel {
     density: f32,
 }
 
+#[derive(Resource)]
 pub struct VoxelsPipeline {
     simplex_pipeline: ComputePipeline,
     simplex_layout: BindGroupLayout,
@@ -103,7 +104,7 @@ impl FromWorld for VoxelsPipeline {
 
         // let simplex_shader = asset_server.load("shaders/simplex.wgsl");
         let shader_source = include_str!("../../assets/shaders/simplex.wgsl");
-        let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
+        let shader = render_device.create_shader_module(ShaderModuleDescriptor {
             label: Some("simplex shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
         });
@@ -130,7 +131,7 @@ impl FromWorld for VoxelsPipeline {
 
         // let voxel_shader = asset_server.load("shaders/voxels.wgsl");
         let shader_source = include_str!("../../assets/shaders/voxels.wgsl");
-        let shader = render_device.create_shader_module(&ShaderModuleDescriptor {
+        let shader = render_device.create_shader_module(ShaderModuleDescriptor {
             label: Some("voxels shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
         });
@@ -199,7 +200,7 @@ pub fn voxel_polygonize_system(
         buffers.atomics.push(0);
         buffers.atomics.push(0);
 
-        let time = time.time_since_startup().as_secs_f32();
+        let time = time.elapsed().as_secs_f32();
         buffers.points.clear();
         for x in 0..CHUNK_SZ {
             for y in 0..CHUNK_SZ {
@@ -240,7 +241,7 @@ pub fn voxel_polygonize_system(
                 let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
                 pass.set_pipeline(&pipeline.simplex_pipeline);
                 pass.set_bind_group(0, &binding_groups.simplex, &[]);
-                pass.dispatch((CHUNK_SZ / 32) as u32, (CHUNK_SZ / 32) as u32, 1);
+                pass.dispatch_workgroups((CHUNK_SZ / 32) as u32, (CHUNK_SZ / 32) as u32, 1);
             }
             render_queue.submit(once(command_encoder.finish()));
 
@@ -281,7 +282,7 @@ pub fn voxel_polygonize_system(
             pass.set_pipeline(&pipeline.voxels_pipeline);
             pass.set_bind_group(0, &binding_groups.voxels, &[]);
             let dispatch_size = (CHUNK_SZ / 8) as u32;
-            pass.dispatch(dispatch_size, dispatch_size, dispatch_size);
+            pass.dispatch_workgroups(dispatch_size, dispatch_size, dispatch_size);
         }
         render_queue.submit(once(command_encoder.finish()));
 
@@ -322,7 +323,7 @@ pub fn voxel_polygonize_system(
         }
 
         // TODO:perf inefficient
-        commands.entity(entity).insert(Collider::bevy_mesh(mesh).unwrap());
+        commands.entity(entity).insert(Collider::from_bevy_mesh(mesh, &ComputedColliderShape::TriMesh).unwrap());
     }
 
     // println!("Elapsed: {:.2?}", now.elapsed());

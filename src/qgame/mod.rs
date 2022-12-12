@@ -111,7 +111,7 @@ impl<T: Pod> BufVec<T> {
         let buffer = self.buffer.as_ref().expect("Buffer is not initialized");
         self.values.resize(len, T::zeroed());
         let buffer_slice = &buffer.slice(..);
-        device.map_buffer(buffer_slice, MapMode::Read);
+        device.map_buffer(buffer_slice, MapMode::Read, |_| {});
         let range = 0..self.item_size * len;
         self.values.copy_from_slice(cast_slice(&buffer_slice.get_mapped_range()[range]));
         buffer.unmap();

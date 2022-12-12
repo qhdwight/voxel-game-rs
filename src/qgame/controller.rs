@@ -147,17 +147,10 @@ pub fn player_move_sys(
                     let cast_capsule = Collider::capsule(capsule.segment.a.into(), capsule.segment.b.into(), capsule.radius * 1.0625);
                     let cast_vel = Vec3::Y * -1.0;
                     let max_dist = 0.125;
-                    let groups = InteractionGroups::all();
+                    let groups = QueryFilter::default().exclude_collider(entity);
 
                     if let Some((_handle, hit)) = physics_context.cast_shape(
                         pos, rot, cast_vel, &cast_capsule, max_dist, groups,
-                        // Filter to prevent self-collisions and collisions with non-solid objects
-                        Some(&|hit_ent| {
-                            hit_ent != entity && match sensor_query.get(hit_ent) {
-                                Ok(sensor) => !sensor.0,
-                                Err(_) => true
-                            }
-                        }),
                     ) {
                         ground_hit = Some(hit);
                     }
