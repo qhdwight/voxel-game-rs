@@ -86,11 +86,19 @@ impl FromWorld for VoxelsPipeline {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
         let _asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("edge table buffer"), contents: cast_slice(EDGE_TABLE), usage: BufferUsages::UNIFORM });
-        let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor { label: Some("tri table buffer"), contents: cast_slice(TRI_TABLE), usage: BufferUsages::UNIFORM });
+        let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("edge table buffer"),
+            contents: cast_slice(EDGE_TABLE),
+            usage: BufferUsages::STORAGE,
+        });
+        let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("tri table buffer"),
+            contents: cast_slice(TRI_TABLE),
+            usage: BufferUsages::STORAGE,
+        });
         let points: BufVec<Vec2> = BufVec::with_capacity(BufferUsages::STORAGE, CHUNK_SZ_2, render_device);
         let heights: BufVec<f32> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_2, render_device);
-        let voxels = render_device.create_buffer(&wgpu::BufferDescriptor {
+        let voxels = render_device.create_buffer(&BufferDescriptor {
             label: Some("voxels buffer"),
             size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
@@ -139,8 +147,8 @@ impl FromWorld for VoxelsPipeline {
             render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("voxels bind group layout"),
                 entries: &[
-                    make_compute_uniform_bind_group_layout_entry(0),
-                    make_compute_uniform_bind_group_layout_entry(1),
+                    make_compute_storage_bind_group_layout_entry(0, false),
+                    make_compute_storage_bind_group_layout_entry(1, false),
                     make_compute_storage_bind_group_layout_entry(2, true),
                     make_compute_storage_bind_group_layout_entry(3, false),
                     make_compute_storage_bind_group_layout_entry(4, false),

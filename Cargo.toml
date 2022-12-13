@@ -14,7 +14,7 @@ toml = "0.5.9"
 flagset = "0.4.3"
 serde = "1.0.149"
 smartstring = { version = "1.0.1", features = ["serde"] }
-wgpu = "0.14.2"
+wgpu = "0.14.0"
 
 [profile.dev]
 opt-level = 1

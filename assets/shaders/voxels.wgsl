@@ -37,10 +37,10 @@ struct TriangleTable {
 };
 
 @group(0) @binding(0)
-var<uniform> uniform_edge_table: EdgeTable;
+var<storage, read_write> uniform_edge_table: EdgeTable;
 
 @group(0) @binding(1)
-var<uniform> uniform_tri_table: TriangleTable;
+var<storage, read_write> uniform_tri_table: TriangleTable;
 
 @group(0) @binding(2)
 var<storage, read> in_voxels: VoxelBuffer;
