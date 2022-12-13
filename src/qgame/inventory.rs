@@ -339,15 +339,14 @@ impl Inventory {
         if let Some(existing_item_ent) = existing_item_ent {
             commands.entity(existing_item_ent).despawn()
         }
-        let item_ent = commands.spawn()
-            .insert(Item {
-                name: item_name.clone(),
-                amount: 1,
-                state_name: ItemStateName::from(IDLE_STATE),
-                state_dur: Duration::ZERO,
-                inv_ent,
-                inv_slot: slot,
-            }).id();
+        let item_ent = commands.spawn(Item {
+            name: item_name.clone(),
+            amount: 1,
+            state_name: ItemStateName::from(IDLE_STATE),
+            state_dur: Duration::ZERO,
+            inv_ent,
+            inv_slot: slot,
+        }).id();
         if self.equipped_slot.is_none() {
             self.equipped_slot = Some(slot);
             self.equip_state_dur = Duration::ZERO;
@@ -383,7 +382,7 @@ pub fn render_inventory_sys(
                     if is_equipped {
                         transform = camera_query.single().mul_transform(Transform::from_xyz(0.4, -0.3, -1.0));
                     }
-                    commands.entity(*item_ent).insert_bundle(PbrBundle {
+                    commands.entity(*item_ent).insert(PbrBundle {
                         mesh: mesh_handle.clone(),
                         material: materials.gun_material.clone(),
                         transform,
@@ -403,7 +402,7 @@ pub fn item_pickup_animate_sys(
     for mut transform in pickup_query.iter_mut() {
         let dr = TAU * time.delta_seconds() * 0.125;
         transform.rotate(Quat::from_axis_angle(Vec3::Y, dr));
-        let height = f32::sin(time.time_since_startup().as_secs_f32()) * 0.125;
+        let height = f32::sin(time.elapsed().as_secs_f32()) * 0.125;
         transform.translation = Vec3::new(0.0, height, 0.0);
     }
 }

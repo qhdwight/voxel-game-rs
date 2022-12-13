@@ -1,15 +1,15 @@
 struct PointBuffer {
-    data: array<vec2<f32>>;
+    data: array<vec2<f32>>,
 };
 
 struct HeightBuffer {
-    data: array<f32>;
+    data: array<f32>,
 };
 
-[[group(0), binding(0)]]
+@group(0) @binding(0)
 var<storage, read> in_points: PointBuffer;
 
-[[group(0), binding(1)]]
+@group(0) @binding(1)
 var<storage, read_write> out_heights: HeightBuffer;
 
 fn permute3(x: vec3<f32>) -> vec3<f32> {
@@ -36,9 +36,9 @@ fn simplexNoise2(v: vec2<f32>) -> f32 {
   return 130. * dot(m, g);
 }
 
-[[stage(compute), workgroup_size(32, 32, 1)]]
-fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
+@compute @workgroup_size(32, 32, 1)
+fn main(@builtin(global_invocation_id) invocation_id: vec3<u32>) {
     let index = invocation_id.x + invocation_id.y * 32u;
-    let point = in_points.data[index];
-    out_heights.data[index] = simplexNoise2(point);
+    let in_point = in_points.data[index];
+    out_heights.data[index] = simplexNoise2(in_point);
 }

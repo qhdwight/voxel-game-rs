@@ -26,6 +26,7 @@ struct TopRightText;
 #[derive(Component)]
 struct PlayerHudText;
 
+#[derive(Resource)]
 pub struct DefaultMaterials {
     pub gun_material: Handle<StandardMaterial>,
 }
@@ -49,15 +50,20 @@ pub enum Render {
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
-        .insert_resource(WindowDescriptor {
-            title: String::from("QGame"),
-            ..default()
-        })
         .insert_resource(AmbientLight {
             color: Color::WHITE,
             brightness: 0.25,
         })
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            window: WindowDescriptor {
+                title: String::from("QGame"),
+                ..default()
+            },
+            ..default()
+        }).set(AssetPlugin {
+            watch_for_changes: true,
+            ..default()
+        }))
         .insert_resource(RapierConfiguration {
             ..default()
         })
@@ -110,7 +116,7 @@ fn setup_sys(
     // println!("{}", toml::to_string(&Config::default()).unwrap());
 
     let config: Handle<Config> = asset_server.load("default.config.toml");
-    commands.insert_resource(config);
+    commands.insert_resource(ConfigState { handle: config });
 
     // commands.spawn_bundle(PointLightBundle {
     //     point_light: PointLight {
@@ -122,7 +128,7 @@ fn setup_sys(
     //     ..default()
     // });
 
-    commands.spawn_bundle(DirectionalLightBundle {
+    commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
             illuminance: 2000.0,
             shadows_enabled: true,
@@ -177,20 +183,17 @@ fn setup_sys(
     //     .insert(ItemPickup { item_name: ItemName::from("rifle") });
 
     commands.insert_resource(DefaultMaterials { gun_material });
-
-    asset_server.watch_for_changes().unwrap()
 }
 
 fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
-    commands.spawn_bundle(UiCameraBundle::default());
 
     commands
-        .spawn_bundle(TextBundle {
+        .spawn(TextBundle {
             style: Style {
                 align_self: AlignSelf::FlexEnd,
                 position_type: PositionType::Absolute,
-                position: Rect {
+                position: UiRect {
                     top: Val::Px(5.0),
                     right: Val::Px(5.0),
                     ..default()
@@ -210,12 +213,12 @@ fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
         })
         .insert(TopRightText);
 
-    commands
-        .spawn_bundle(TextBundle {
+    commands.spawn((
+        TextBundle {
             style: Style {
                 align_self: AlignSelf::FlexEnd,
                 position_type: PositionType::Absolute,
-                position: Rect {
+                position: UiRect {
                     bottom: Val::Px(5.0),
                     left: Val::Px(5.0),
                     ..default()
@@ -232,8 +235,9 @@ fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
                 alignment: Default::default(),
             },
             ..default()
-        })
-        .insert(PlayerHudText);
+        },
+        PlayerHudText
+    ));
 }
 
 fn spawn_voxel_sys(
@@ -251,11 +255,11 @@ fn spawn_voxel_sys(
         base_color: Color::DARK_GREEN,
         ..default()
     });
-    commands.spawn().insert(Map::default());
-    commands.spawn()
+    commands.spawn(Map::default());
+    commands.spawn_empty()
         .insert(Chunk::new(IVec3::ZERO))
         // .insert(AsyncCollider::Mesh(mesh_handle.clone()))
-        .insert_bundle(PbrBundle {
+        .insert(PbrBundle {
             mesh: mesh_handle.clone(),
             material: ground_mat_handle.clone(),
             ..default()
@@ -264,17 +268,17 @@ fn spawn_voxel_sys(
 
 fn spawn_player_sys(mut commands: Commands) {
     let inv = Inventory::default();
-    commands.spawn()
+    commands.spawn_empty()
         .insert(Collider::capsule(Vec3::Y * 0.5, Vec3::Y * 1.5, 0.5))
         .insert(ActiveEvents::COLLISION_EVENTS)
         .insert(Velocity::zero())
         .insert(RigidBody::Dynamic)
         .insert(Sleeping::disabled())
         .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(MassProperties {
+        .insert(ReadMassProperties(MassProperties {
             mass: 1.0,
             ..default()
-        })
+        }))
         .insert(GravityScale(0.0))
         .insert(Ccd { enabled: true })
         .insert(Transform::from_xyz(4.0, 24.0, 4.0))
@@ -289,11 +293,10 @@ fn spawn_player_sys(mut commands: Commands) {
         })
         .insert(inv);
 
-    commands.spawn()
-        .insert_bundle(PerspectiveCameraBundle::new_3d())
-        .insert(RenderPlayer(0));
+    commands.spawn((Camera3dBundle::default(), RenderPlayer(0)));
 }
 
+#[derive(Resource)]
 pub struct Buffers {
     // Place edge table and triangle table in uniform buffer
     // They are too large to have inline in the shader

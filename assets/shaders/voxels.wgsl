@@ -1,63 +1,63 @@
 struct Voxel {
-    flags: u32;
-    density: f32;
+    flags: u32,
+    density: f32,
 };
 
 struct VoxelBuffer {
-    data: array<Voxel>;
+    data: array<Voxel>,
 };
 
 struct VertexBuffer {
-    data: array<vec3<f32>>;
+    data: array<vec3<f32>>,
 };
 
 struct NormalBuffer {
-    data: array<vec3<f32>>;
+    data: array<vec3<f32>>,
 };
 
 struct IndexBuffer {
-    data: array<u32>;
+    data: array<u32>,
 };
 
 struct UvBuffer {
-    data: array<vec2<f32>>;
+    data: array<vec2<f32>>,
 };
 
 struct Atomics {
-    vertices_head: atomic<u32>;
-    indices_head: atomic<u32>;
+    vertices_head: atomic<u32>,
+    indices_head: atomic<u32>,
 };
 
 struct EdgeTable {
-    data: array<u32, 256>;
+    data: array<u32, 256>,
 };
 
 struct TriangleTable {
-    data: array<array<i32, 16>, 256>;
+    data: array<array<i32, 16>, 256>,
 };
 
-[[group(0), binding(0)]]
-var<uniform> uniform_edge_table: EdgeTable;
+@group(0) @binding(0)
+var<storage, read_write> uniform_edge_table: EdgeTable;
 
-[[group(0), binding(1)]]
-var<uniform> uniform_tri_table: TriangleTable;
+@group(0) @binding(1)
+var<storage, read_write> uniform_tri_table: TriangleTable;
 
-[[group(0), binding(2)]]
+@group(0) @binding(2)
 var<storage, read> in_voxels: VoxelBuffer;
 
-[[group(0), binding(3)]]
+@group(0) @binding(3)
 var<storage, read_write> global_atomics: Atomics;
 
-[[group(0), binding(4)]]
+@group(0) @binding(4)
 var<storage, read_write> out_vertices: VertexBuffer;
 
-[[group(0), binding(5)]]
+@group(0) @binding(5)
 var<storage, read_write> out_normals: NormalBuffer;
 
-[[group(0), binding(6)]]
+@group(0) @binding(6)
 var<storage, read_write> out_indices: IndexBuffer;
 
-[[group(0), binding(7)]]
+@group(0) @binding(7)
 var<storage, read_write> out_uvs: UvBuffer;
 
 
@@ -82,8 +82,8 @@ fn interp_vertex(p1: vec3<f32>, p2: vec3<f32>, v1: f32, v2: f32) -> vec3<f32> {
     return p1 + mu * (p2 - p1);
 }
 
-[[stage(compute), workgroup_size(8, 8, 8)]]
-fn main([[builtin(global_invocation_id)]] invocation_id: vec3<u32>) {
+@compute @workgroup_size(8, 8, 8)
+fn main(@builtin(global_invocation_id) invocation_id: vec3<u32>) {
 
     let pos = vec3<i32>(invocation_id);
     let voxel = in_voxels.data[get_flat_index(pos)];
