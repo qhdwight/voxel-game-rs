@@ -17,9 +17,9 @@ use bevy::{
 use bevy::prelude::shape::Cube;
 use bevy_rapier3d::prelude::*;
 
-use qgame::*;
+use engine::*;
 
-mod qgame;
+mod engine;
 
 #[derive(Component)]
 struct TopRightText;
@@ -165,22 +165,19 @@ fn setup_sys(
         ..default()
     });
 
-    // let rifle_handle = asset_server.load("models/rifle.gltf#Mesh0/Primitive0");
-    // commands.spawn()
-    //     .insert(GlobalTransform::default())
-    //     .with_children(|parent| {
-    //         parent.spawn_bundle(PbrBundle {
-    //             mesh: rifle_handle.clone(),
-    //             material: gun_material.clone(),
-    //             ..default()
-    //         })
-    //             .insert(ItemPickupVisual::default());
-    //     })
-    //     .insert(Collider::ball(0.5))
-    //     .insert(Sensor(true))
-    //     .insert(Transform::from_xyz(0.0, 20.0, 8.0))
-    //     .insert(ItemPickup { item_name: ItemName::from("rifle") });
-
+    let rifle_handle = asset_server.load("models/knife.gltf#Mesh0/Primitive0");
+    commands.spawn((
+        TransformBundle::from(Transform::from_xyz(0.0, 20.0, 8.0)),
+        Collider::ball(0.5),
+        Sensor,
+        ItemPickup { item_name: ItemName::from("knife") }
+    )).with_children(|parent| {
+        parent.spawn(PbrBundle {
+            mesh: rifle_handle,
+            material: gun_material.clone(),
+            ..default()
+        });
+    });
     commands.insert_resource(DefaultMaterials { gun_material });
 }
 

@@ -25,3 +25,11 @@ opt-level = 3
 [profile.release]
 opt-level = 3
 lto = "thin"
+
+[lib]
+name = "engine"
+path = "src/engine/lib.rs"
+
+[[bin]]
+name = "item"
+path = "src/scripts/item.rs"

@@ -45,7 +45,7 @@ pub fn create_staging_buffer(read_only: bool, size: usize, device: &RenderDevice
     })
 }
 
-pub fn create_buffer(read_only: bool, size: usize, device: &RenderDevice) -> Buffer {
+pub fn create_buffer(_read_only: bool, size: usize, device: &RenderDevice) -> Buffer {
     // let mut usage = BufferUsages::STORAGE | if read_only {
     //     BufferUsages::COPY_SRC
     // } else {

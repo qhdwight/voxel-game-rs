@@ -14,7 +14,7 @@ use bevy_rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String;
 
-use crate::{DefaultMaterials, PlayerInput, PlayerInputFlags};
+use crate::{PlayerInput, PlayerInputFlags};
 
 const EQUIPPING_STATE: &str = "equipping";
 const EQUIPPED_STATE: &str = "equipped";
@@ -25,8 +25,8 @@ const RELOAD_STATE: &str = "reload";
 const FIRE_STATE: &str = "fire";
 
 pub type ItemName = String;
-type ItemStateName = String;
-type EquipStateName = String;
+pub type ItemStateName = String;
+pub type EquipStateName = String;
 
 #[derive(Serialize, Deserialize)]
 pub struct ItemStateProps {

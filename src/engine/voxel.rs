@@ -13,6 +13,7 @@ use bevy::{
     },
     utils::HashMap,
 };
+use bevy_rapier3d::prelude::*;
 use wgpu::MaintainBase::Wait;
 
 use crate::*;
