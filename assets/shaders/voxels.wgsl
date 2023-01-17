@@ -37,10 +37,10 @@ struct TriangleTable {
 };
 
 @group(0) @binding(0)
-var<storage, read_write> uniform_edge_table: EdgeTable;
+var<storage, read> uniform_edge_table: EdgeTable;
 
 @group(0) @binding(1)
-var<storage, read_write> uniform_tri_table: TriangleTable;
+var<storage, read> uniform_tri_table: TriangleTable;
 
 @group(0) @binding(2)
 var<storage, read> in_voxels: VoxelBuffer;
@@ -231,7 +231,7 @@ fn main(@builtin(global_invocation_id) invocation_id: vec3<u32>) {
             vec3<i32>( 0,  0, -1),
         );
 
-        var dir: u32 = 0u;  
+        var dir: u32 = 0u;
         loop {
             let adj_pos = pos + block_adj_offsets[dir];
             let adj_density = get_voxel_density(pos);

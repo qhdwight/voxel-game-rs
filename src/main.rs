@@ -14,6 +14,7 @@ use bevy::{
     },
     window::WindowDescriptor,
 };
+use bevy::prelude::shape::Cube;
 use bevy_rapier3d::prelude::*;
 
 use qgame::*;
@@ -111,6 +112,7 @@ fn main() {
 fn setup_sys(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // println!("{}", toml::to_string(&Config::default()).unwrap());
@@ -138,26 +140,23 @@ fn setup_sys(
         ..default()
     });
 
-    // {
-    //     let mesh = meshes.add(Mesh::from(bevy::prelude::shape::Cube { size: 1.0 }));
-    //     let material = materials.add(StandardMaterial {
-    //         base_color: Color::PINK,
-    //         ..default()
-    //     });
-    //     commands.spawn()
-    //         .insert_bundle(PbrBundle {
-    //             mesh: mesh.clone(),
-    //             material: material.clone(),
-    //             transform: Transform::from_xyz(-18.0, 32.0, -18.0),
-    //             ..default()
-    //         })
-    //         .insert_bundle(ColliderBundle {
-    //             shape: ColliderShape::cuboid(1.0, 1.0, 1.0).into(),
-    //             collider_type: ColliderType::Solid.into(),
-    //             position: Vec3::new(-18.0, 32.0, -18.0).into(),
-    //             ..default()
-    //         });
-    // }
+    {
+        let mesh = meshes.add(Mesh::from(Cube { size: 1.0 }));
+        let material = materials.add(StandardMaterial {
+            base_color: Color::PINK,
+            ..default()
+        });
+        commands.spawn((
+            PbrBundle {
+                mesh: mesh.clone(),
+                material: material.clone(),
+                // transform: Transform::from_xyz(-18.0, 32.0, -18.0),
+                transform: Transform::from_xyz(0.0, 0.0, 0.0),
+                ..default()
+            },
+            Collider::cuboid(0.5, 0.5, 0.5),
+        ));
+    }
 
     let gun_material = materials.add(StandardMaterial {
         base_color: Color::DARK_GRAY,
@@ -256,42 +255,41 @@ fn spawn_voxel_sys(
         ..default()
     });
     commands.spawn(Map::default());
-    commands.spawn_empty()
-        .insert(Chunk::new(IVec3::ZERO))
-        // .insert(AsyncCollider::Mesh(mesh_handle.clone()))
-        .insert(PbrBundle {
+    commands.spawn((
+        Chunk::new(IVec3::ZERO),
+        PbrBundle {
             mesh: mesh_handle.clone(),
             material: ground_mat_handle.clone(),
             ..default()
-        });
+        },
+    ));
 }
 
 fn spawn_player_sys(mut commands: Commands) {
-    let inv = Inventory::default();
-    commands.spawn_empty()
-        .insert(Collider::capsule(Vec3::Y * 0.5, Vec3::Y * 1.5, 0.5))
-        .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(Velocity::zero())
-        .insert(RigidBody::Dynamic)
-        .insert(Sleeping::disabled())
-        .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(ReadMassProperties(MassProperties {
+    commands.spawn((
+        Collider::capsule(Vec3::Y * 0.5, Vec3::Y * 1.5, 0.5),
+        Velocity::zero(),
+        RigidBody::Dynamic,
+        Sleeping::disabled(),
+        LockedAxes::ROTATION_LOCKED,
+        ReadMassProperties(MassProperties {
             mass: 1.0,
             ..default()
-        }))
-        .insert(GravityScale(0.0))
-        .insert(Ccd { enabled: true })
-        .insert(Transform::from_xyz(4.0, 24.0, 4.0))
-        .insert(LogicalPlayer(0))
-        .insert(PlayerInput {
+        }),
+        GravityScale(0.0),
+        Ccd { enabled: true },
+        TransformBundle::from(Transform::from_xyz(4.0, 18.0, 4.0)),
+        LogicalPlayer(0),
+        PlayerInput {
             pitch: -TAU / 12.0,
             yaw: TAU * 5.0 / 8.0,
             ..default()
-        })
-        .insert(PlayerController {
+        },
+        PlayerController {
             ..default()
-        })
-        .insert(inv);
+        },
+        Inventory::default(),
+    ));
 
     commands.spawn((Camera3dBundle::default(), RenderPlayer(0)));
 }
@@ -305,11 +303,13 @@ pub struct Buffers {
     points: BufVec<Vec2>,
     heights: BufVec<f32>,
     voxels: Buffer,
+    voxels_staging: Buffer,
     vertices: BufVec<Vec4>,
     normals: BufVec<Vec4>,
     uvs: BufVec<Vec2>,
     indices: BufVec<u32>,
     atomics: BufVec<u32>,
+    atomics_staging: Buffer,
 }
 
 struct BindingGroups {
@@ -330,7 +330,7 @@ fn update_fps_text_sys(
             }
         }
 
-        let mut frame_time = time.delta_seconds_f64();
+        let mut frame_time = 0.0f64;
         if let Some(frame_time_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FRAME_TIME) {
             if let Some(frame_time_avg) = frame_time_diagnostic.average() {
                 frame_time = frame_time_avg;
@@ -339,7 +339,7 @@ fn update_fps_text_sys(
 
         let text = &mut text.sections[0].value;
         text.clear();
-        write!(text, "{:.1} fps, {:.3} ms/frame", fps, frame_time * 1000.0).unwrap();
+        write!(text, "{:.1} fps, {:.3} ms/frame", fps, frame_time).unwrap();
     }
 }
 
