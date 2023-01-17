@@ -305,11 +305,13 @@ pub struct Buffers {
     points: BufVec<Vec2>,
     heights: BufVec<f32>,
     voxels: Buffer,
+    voxels_staging: Buffer,
     vertices: BufVec<Vec4>,
     normals: BufVec<Vec4>,
     uvs: BufVec<Vec2>,
     indices: BufVec<u32>,
     atomics: BufVec<u32>,
+    atomics_staging: Buffer,
 }
 
 struct BindingGroups {
@@ -330,7 +332,7 @@ fn update_fps_text_sys(
             }
         }
 
-        let mut frame_time = time.delta_seconds_f64();
+        let mut frame_time = 0.0f64;
         if let Some(frame_time_diagnostic) = diagnostics.get(FrameTimeDiagnosticsPlugin::FRAME_TIME) {
             if let Some(frame_time_avg) = frame_time_diagnostic.average() {
                 frame_time = frame_time_avg;
@@ -339,7 +341,7 @@ fn update_fps_text_sys(
 
         let text = &mut text.sections[0].value;
         text.clear();
-        write!(text, "{:.1} fps, {:.3} ms/frame", fps, frame_time * 1000.0).unwrap();
+        write!(text, "{:.1} fps, {:.3} ms/frame", fps, frame_time).unwrap();
     }
 }
 

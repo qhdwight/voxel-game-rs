@@ -1,4 +1,7 @@
-use std::slice::Iter;
+use std::{
+    mem::size_of,
+    slice::Iter,
+};
 
 use bevy::{
     core::{cast_slice, Pod},
@@ -8,7 +11,6 @@ use bevy::{
     },
 };
 use wgpu::BufferUsages;
-use wgpu::MaintainBase::Wait;
 
 pub use controller::*;
 pub use input::*;
@@ -23,47 +25,63 @@ mod lookup;
 mod voxel;
 
 pub struct BufVec<T: Pod> {
+    read_only: bool,
+    buffer_capacity: usize,
     values: Vec<T>,
-    buffer: Option<Buffer>,
-    capacity: usize,
-    item_size: usize,
-    buffer_usage: BufferUsages,
+    staging_buffer: Buffer,
+    buffer: Buffer,
 }
 
-impl<T: Pod> Default for BufVec<T> {
-    fn default() -> Self {
-        Self {
-            values: Vec::new(),
-            buffer: None,
-            capacity: 0,
-            buffer_usage: BufferUsages::all(),
-            item_size: std::mem::size_of::<T>(),
-        }
-    }
+pub fn create_staging_buffer(read_only: bool, size: usize, device: &RenderDevice) -> Buffer {
+    device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: size as BufferAddress,
+        usage: BufferUsages::COPY_DST | if read_only {
+            BufferUsages::MAP_READ
+        } else {
+            BufferUsages::COPY_SRC
+        },
+        mapped_at_creation: false,
+    })
+}
+
+pub fn create_buffer(read_only: bool, size: usize, device: &RenderDevice) -> Buffer {
+    // let mut usage = BufferUsages::STORAGE | if read_only {
+    //     BufferUsages::COPY_SRC
+    // } else {
+    //     BufferUsages::COPY_DST
+    // };
+    let usage = BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST;
+    device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: size as BufferAddress,
+        usage,
+        mapped_at_creation: false,
+    })
 }
 
 impl<T: Pod> BufVec<T> {
-    pub fn new(buffer_usage: BufferUsages) -> Self {
-        Self {
-            buffer_usage,
-            ..Default::default()
-        }
-    }
-
-    pub fn with_capacity(buffer_usage: BufferUsages, capacity: usize, device: &RenderDevice) -> Self {
-        let mut buffer = BufVec::new(buffer_usage);
-        buffer.ensure_buf_cap(capacity, device);
+    pub fn with_capacity(read_only: bool, capacity: usize, device: &RenderDevice) -> Self {
+        let size = capacity * size_of::<T>();
+        let mut buffer = BufVec {
+            read_only,
+            buffer_capacity: capacity,
+            values: Vec::with_capacity(capacity),
+            staging_buffer: create_staging_buffer(read_only, size, device),
+            buffer: create_buffer(read_only, size, device),
+        };
+        buffer.ensure_buf_cap(device);
         buffer
     }
 
     #[inline]
-    pub fn buffer(&self) -> Option<&Buffer> {
-        self.buffer.as_ref()
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
     }
 
     #[inline]
     pub fn capacity(&self) -> usize {
-        self.capacity
+        self.buffer_capacity
     }
 
     #[inline]
@@ -82,41 +100,45 @@ impl<T: Pod> BufVec<T> {
         index
     }
 
-    fn ensure_buf_cap(&mut self, capacity: usize, device: &RenderDevice) {
-        if capacity > self.capacity {
-            self.capacity = capacity;
-            let size = self.item_size * capacity;
-            self.buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
-                label: None,
-                size: size as wgpu::BufferAddress,
-                usage: BufferUsages::COPY_DST | self.buffer_usage,
-                mapped_at_creation: false,
-            }));
+    fn ensure_buf_cap(&mut self, device: &RenderDevice) {
+        if self.values.len() > self.buffer_capacity {
+            let size = self.values.len() * size_of::<T>();
+            self.staging_buffer = create_staging_buffer(self.read_only, size, device);
+            self.buffer = create_buffer(self.read_only, size, device);
+            self.buffer_capacity = size;
         }
     }
 
-    pub fn write_buffer(&mut self, device: &RenderDevice, queue: &RenderQueue) {
+    pub fn encode_write(&mut self, queue: &RenderQueue, command_encoder: &mut CommandEncoder) {
         if self.values.is_empty() {
             return;
         }
-        self.ensure_buf_cap(self.values.len(), device);
-        if let Some(buffer) = &self.buffer {
-            let range = 0..self.item_size * self.values.len();
-            let bytes: &[u8] = cast_slice(&self.values);
-            queue.write_buffer(buffer, 0, &bytes[range]);
-        }
+
+        let size_bytes = size_of::<T>() * self.values.len();
+        let range = 0..size_bytes;
+        let bytes: &[u8] = cast_slice(&self.values);
+        queue.write_buffer(&self.staging_buffer, 0, &bytes[range]);
+        command_encoder.copy_buffer_to_buffer(&self.staging_buffer, 0, &self.buffer, 0, size_bytes as BufferAddress);
     }
 
-    pub fn read_buffer(&mut self, len: usize, device: &RenderDevice)
-    {
-        let buffer = self.buffer.as_ref().expect("Buffer is not initialized");
+    pub fn encode_read(&mut self, len: usize, command_encoder: &mut CommandEncoder) {
+        let size = size_of::<T>() * len;
+        command_encoder.copy_buffer_to_buffer(&self.buffer, 0, &self.staging_buffer, 0, size as BufferAddress);
+    }
+
+    pub fn map_buffer(&mut self, len: usize) {
         self.values.resize(len, T::zeroed());
-        let buffer_slice = &buffer.slice(..);
-        device.map_buffer(buffer_slice, MapMode::Read, |_| {});
-        device.poll(Wait);
-        let range = 0..self.item_size * len;
+        let buffer_slice = self.staging_buffer.slice(..);
+        buffer_slice.map_async(MapMode::Read, |_| {});
+    }
+
+    pub fn read_and_unmap_buffer(&mut self, len: usize) {
+        self.values.resize(len, T::zeroed());
+
+        let buffer_slice = self.staging_buffer.slice(..);
+        let range = 0..size_of::<T>() * len;
         self.values.copy_from_slice(cast_slice(&buffer_slice.get_mapped_range()[range]));
-        buffer.unmap();
+        self.staging_buffer.unmap();
     }
 
     pub fn as_slice(&self) -> &[T] {
@@ -129,31 +151,5 @@ impl<T: Pod> BufVec<T> {
 
     pub fn clear(&mut self) {
         self.values.clear();
-    }
-}
-
-pub(crate) fn make_compute_uniform_bind_group_layout_entry(binding: u32) -> BindGroupLayoutEntry {
-    BindGroupLayoutEntry {
-        binding,
-        visibility: ShaderStages::COMPUTE,
-        ty: BindingType::Buffer {
-            ty: BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    }
-}
-
-pub(crate) fn make_compute_storage_bind_group_layout_entry(binding: u32, read_only: bool) -> BindGroupLayoutEntry {
-    BindGroupLayoutEntry {
-        binding,
-        visibility: ShaderStages::COMPUTE,
-        ty: BindingType::Buffer {
-            ty: BufferBindingType::Storage { read_only },
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
     }
 }

@@ -13,6 +13,7 @@ use bevy::{
     },
     utils::HashMap,
 };
+use wgpu::MaintainBase::Wait;
 
 use crate::*;
 
@@ -66,9 +67,7 @@ pub struct Voxel {
 #[derive(Resource)]
 pub struct VoxelsPipeline {
     simplex_pipeline: ComputePipeline,
-    simplex_layout: BindGroupLayout,
     voxels_pipeline: ComputePipeline,
-    voxels_layout: BindGroupLayout,
 }
 
 pub struct VoxelsPlugin;
@@ -96,19 +95,30 @@ impl FromWorld for VoxelsPipeline {
             contents: cast_slice(TRI_TABLE),
             usage: BufferUsages::STORAGE,
         });
-        let points: BufVec<Vec2> = BufVec::with_capacity(BufferUsages::STORAGE, CHUNK_SZ_2, render_device);
-        let heights: BufVec<f32> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_2, render_device);
+        let points: BufVec<Vec2> = BufVec::with_capacity(false, CHUNK_SZ_2, render_device);
+        let heights: BufVec<f32> = BufVec::with_capacity(true, CHUNK_SZ_2, render_device);
         let voxels = render_device.create_buffer(&BufferDescriptor {
             label: Some("voxels buffer"),
             size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let vertices: BufVec<Vec4> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 4 * 6, render_device);
-        let uvs: BufVec<Vec2> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 4 * 6, render_device);
-        let normals: BufVec<Vec4> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 4 * 6, render_device);
-        let indices: BufVec<u32> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, CHUNK_SZ_3 * 6 * 6, render_device);
-        let atomics: BufVec<u32> = BufVec::with_capacity(BufferUsages::STORAGE | BufferUsages::MAP_READ, 2, render_device);
+        let voxels_staging = render_device.create_buffer(&BufferDescriptor {
+            label: Some("voxels staging buffer"),
+            size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
+            usage: BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let vertices: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
+        let uvs: BufVec<Vec2> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
+        let normals: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
+        let indices: BufVec<u32> = BufVec::with_capacity(true, CHUNK_SZ_3 * 6 * 6, render_device);
+        let atomics: BufVec<u32> = BufVec::with_capacity(true, 2, render_device);
+        let atomics_staging = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("atomics staging buffer"),
+            contents: cast_slice(&[0u32, 0u32]),
+            usage: BufferUsages::COPY_SRC,
+        });
 
         // let simplex_shader = asset_server.load("shaders/simplex.wgsl");
         let shader_source = include_str!("../../assets/shaders/simplex.wgsl");
@@ -116,23 +126,10 @@ impl FromWorld for VoxelsPipeline {
             label: Some("simplex shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
         });
-        let simplex_layout =
-            render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("simplex bind group layout"),
-                entries: &[
-                    make_compute_storage_bind_group_layout_entry(0, true),
-                    make_compute_storage_bind_group_layout_entry(1, false),
-                ],
-            });
-        let pipeline_layout = render_device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("simplex pipeline layout"),
-            bind_group_layouts: &[&simplex_layout],
-            push_constant_ranges: &[],
-        });
         // TODO:arch update to Bevy compute creation when they allow PipelineCache to be used in main world
         let simplex_pipeline = render_device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("simplex pipeline"),
-            layout: Some(&pipeline_layout),
+            layout: None,
             module: &shader,
             entry_point: "main",
         });
@@ -143,39 +140,18 @@ impl FromWorld for VoxelsPipeline {
             label: Some("voxels shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
         });
-        let voxels_layout =
-            render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("voxels bind group layout"),
-                entries: &[
-                    make_compute_storage_bind_group_layout_entry(0, false),
-                    make_compute_storage_bind_group_layout_entry(1, false),
-                    make_compute_storage_bind_group_layout_entry(2, true),
-                    make_compute_storage_bind_group_layout_entry(3, false),
-                    make_compute_storage_bind_group_layout_entry(4, false),
-                    make_compute_storage_bind_group_layout_entry(5, false),
-                    make_compute_storage_bind_group_layout_entry(6, false),
-                    make_compute_storage_bind_group_layout_entry(7, false),
-                ],
-            });
-        let pipeline_layout = render_device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("voxels pipeline layout"),
-            bind_group_layouts: &[&voxels_layout],
-            push_constant_ranges: &[],
-        });
         let voxels_pipeline = render_device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("voxels pipeline"),
-            layout: Some(&pipeline_layout),
+            layout: None,
             module: &shader,
             entry_point: "main",
         });
 
-        world.insert_resource(Buffers { edge_table, tri_table, points, heights, voxels, vertices, normals, uvs, indices, atomics });
+        world.insert_resource(Buffers { edge_table, tri_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
 
         VoxelsPipeline {
             simplex_pipeline,
-            simplex_layout,
             voxels_pipeline,
-            voxels_layout,
         }
     }
 }
@@ -219,41 +195,43 @@ pub fn voxel_polygonize_system(
         let binding_groups = BindingGroups {
             simplex: render_device.create_bind_group(&BindGroupDescriptor {
                 label: Some("simplex binding"),
-                layout: &pipeline.simplex_layout,
+                layout: &pipeline.simplex_pipeline.get_bind_group_layout(0),
                 entries: &[
-                    BindGroupEntry { binding: 0, resource: buffers.points.buffer().unwrap().as_entire_binding() },
-                    BindGroupEntry { binding: 1, resource: buffers.heights.buffer().unwrap().as_entire_binding() }
+                    BindGroupEntry { binding: 0, resource: buffers.points.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 1, resource: buffers.heights.buffer().as_entire_binding() }
                 ],
             }),
             voxels: render_device.create_bind_group(&BindGroupDescriptor {
                 label: Some("voxels binding"),
-                layout: &pipeline.voxels_layout,
+                layout: &pipeline.voxels_pipeline.get_bind_group_layout(0),
                 entries: &[
                     BindGroupEntry { binding: 0, resource: buffers.edge_table.as_entire_binding() },
                     BindGroupEntry { binding: 1, resource: buffers.tri_table.as_entire_binding() },
                     BindGroupEntry { binding: 2, resource: buffers.voxels.as_entire_binding() },
-                    BindGroupEntry { binding: 3, resource: buffers.atomics.buffer().unwrap().as_entire_binding() },
-                    BindGroupEntry { binding: 4, resource: buffers.vertices.buffer().unwrap().as_entire_binding() },
-                    BindGroupEntry { binding: 5, resource: buffers.normals.buffer().unwrap().as_entire_binding() },
-                    BindGroupEntry { binding: 6, resource: buffers.indices.buffer().unwrap().as_entire_binding() },
-                    BindGroupEntry { binding: 7, resource: buffers.uvs.buffer().unwrap().as_entire_binding() },
+                    BindGroupEntry { binding: 3, resource: buffers.atomics.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 4, resource: buffers.vertices.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 5, resource: buffers.normals.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 6, resource: buffers.indices.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 7, resource: buffers.uvs.buffer().as_entire_binding() },
                 ],
             }),
         };
 
         if !buffers.points.is_empty() {
-            buffers.points.write_buffer(render_device.as_ref(), render_queue.as_ref());
-
             let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("simplex command encoder") });
+            buffers.points.encode_write(render_queue.as_ref(), &mut command_encoder);
             {
                 let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
                 pass.set_pipeline(&pipeline.simplex_pipeline);
                 pass.set_bind_group(0, &binding_groups.simplex, &[]);
                 pass.dispatch_workgroups((CHUNK_SZ / 32) as u32, (CHUNK_SZ / 32) as u32, 1);
             }
+            buffers.heights.encode_read(CHUNK_SZ_2, &mut command_encoder);
             render_queue.submit(once(command_encoder.finish()));
+            buffers.heights.map_buffer(CHUNK_SZ_2);
+            render_device.poll(Wait);
+            buffers.heights.read_and_unmap_buffer(CHUNK_SZ_2);
 
-            buffers.heights.read_buffer(CHUNK_SZ_2, render_device.as_ref());
             for z in 0..CHUNK_SZ {
                 for y in 0..CHUNK_SZ {
                     for x in 0..CHUNK_SZ {
@@ -279,12 +257,10 @@ pub fn voxel_polygonize_system(
             }
         }
 
-        let range = 0..size_of::<Voxel>() * chunk.voxels.len();
-        let bytes: &[u8] = cast_slice(&chunk.voxels);
-        render_queue.write_buffer(&buffers.voxels, 0, &bytes[range]);
-        buffers.atomics.write_buffer(render_device.as_ref(), render_queue.as_ref());
-
-        let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("voxel command encoder") });
+        let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("voxel 1 command encoder") });
+        render_queue.write_buffer(&buffers.voxels_staging, 0, &cast_slice(&chunk.voxels)[..]);
+        command_encoder.copy_buffer_to_buffer(&buffers.voxels_staging, 0, &buffers.voxels, 0, (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress);
+        command_encoder.copy_buffer_to_buffer(&buffers.atomics_staging, 0, &buffers.atomics.buffer, 0, (2 * size_of::<u32>()) as BufferAddress);
         {
             let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline.voxels_pipeline);
@@ -292,15 +268,34 @@ pub fn voxel_polygonize_system(
             let dispatch_size = (CHUNK_SZ / 8) as u32;
             pass.dispatch_workgroups(dispatch_size, dispatch_size, dispatch_size);
         }
+        buffers.atomics.encode_read(2, &mut command_encoder);
         render_queue.submit(once(command_encoder.finish()));
-
-        buffers.atomics.read_buffer(2, render_device.as_ref());
+        buffers.atomics.map_buffer(2);
+        render_device.poll(Wait);
+        buffers.atomics.read_and_unmap_buffer(2);
         let vertex_count = buffers.atomics.as_slice()[0] as usize;
         let index_count = buffers.atomics.as_slice()[1] as usize;
-        buffers.vertices.read_buffer(vertex_count, render_device.as_ref());
-        buffers.normals.read_buffer(vertex_count, render_device.as_ref());
-        buffers.uvs.read_buffer(vertex_count, render_device.as_ref());
-        buffers.indices.read_buffer(index_count, render_device.as_ref());
+
+        if vertex_count == 0 {
+            continue;
+        }
+
+        let mut command_encoder = render_device.create_command_encoder(&CommandEncoderDescriptor { label: Some("voxel 2 command encoder") });
+        buffers.vertices.encode_read(vertex_count, &mut command_encoder);
+        buffers.normals.encode_read(vertex_count, &mut command_encoder);
+        buffers.uvs.encode_read(vertex_count, &mut command_encoder);
+        buffers.indices.encode_read(index_count, &mut command_encoder);
+        render_queue.submit(once(command_encoder.finish()));
+        buffers.vertices.map_buffer(vertex_count);
+        buffers.normals.map_buffer(vertex_count);
+        buffers.uvs.map_buffer(vertex_count);
+        buffers.indices.map_buffer(index_count);
+        render_device.poll(Wait);
+
+        buffers.vertices.read_and_unmap_buffer(vertex_count);
+        buffers.normals.read_and_unmap_buffer(vertex_count);
+        buffers.uvs.read_and_unmap_buffer(vertex_count);
+        buffers.indices.read_and_unmap_buffer(index_count);
 
         let mesh = meshes.get_mut(mesh).unwrap();
 
