@@ -144,7 +144,7 @@ pub fn player_move_sys(
 
                     // Capsule cast downwards to find ground
                     let mut ground_hit = None;
-                    let cast_capsule = Collider::capsule(capsule.segment.a.into(), capsule.segment.b.into(), capsule.radius * 1.0625);
+                    let cast_capsule = Collider::capsule(capsule.segment.a.into(), capsule.segment.b.into(), capsule.radius * 0.99);
                     let cast_vel = Vec3::Y * -1.0;
                     let max_dist = 0.125;
                     let groups = QueryFilter::default().exclude_collider(entity);
