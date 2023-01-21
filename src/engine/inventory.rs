@@ -105,9 +105,9 @@ impl Plugin for InventoryPlugin {
 }
 
 #[derive(Default)]
-pub struct ConfigAssetLoader;
+pub struct ItemAssetLoader;
 
-impl AssetLoader for ConfigAssetLoader {
+impl AssetLoader for ItemAssetLoader {
     fn load<'a>(
         &'a self,
         bytes: &'a [u8],
@@ -121,7 +121,7 @@ impl AssetLoader for ConfigAssetLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["config.toml"]
+        &["item.toml"]
     }
 }
 
@@ -367,7 +367,6 @@ impl Inventory {
 pub fn render_inventory_sys(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    materials: Res<DefaultMaterials>,
     item_query: Query<&mut Item>,
     player_query: Query<&Inventory>,
     camera_query: Query<&Transform, With<PerspectiveProjection>>,
@@ -378,17 +377,17 @@ pub fn render_inventory_sys(
                 if let Ok(item) = item_query.get(*item_ent) {
                     let is_equipped = inv.equipped_slot == Some(item.inv_slot);
                     let mut transform = Transform::default();
-                    let mesh_handle = asset_server.load(format!("models/{}.gltf#Mesh0/Primitive0", item.name).as_str());
-                    if is_equipped {
-                        transform = camera_query.single().mul_transform(Transform::from_xyz(0.4, -0.3, -1.0));
-                    }
-                    commands.entity(*item_ent).insert(PbrBundle {
-                        mesh: mesh_handle.clone(),
-                        material: materials.gun_material.clone(),
-                        transform,
-                        visibility: Visibility { is_visible: is_equipped },
-                        ..default()
-                    });
+                    // let mesh_handle = asset_server.load(format!("models/{}.gltf#Mesh0/Primitive0", item.name).as_str());
+                    // if is_equipped {
+                    //     transform = camera_query.single().mul_transform(Transform::from_xyz(0.4, -0.3, -1.0));
+                    // }
+                    // commands.entity(*item_ent).insert(PbrBundle {
+                    //     mesh: mesh_handle.clone(),
+                    //     material: materials.gun_material.clone(),
+                    //     transform,
+                    //     visibility: Visibility { is_visible: is_equipped },
+                    //     ..default()
+                    // });
                 }
             }
         }

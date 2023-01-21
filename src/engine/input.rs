@@ -50,7 +50,7 @@ pub struct Config {
 
 #[derive(Resource)]
 pub struct ConfigState {
-    pub(crate) handle: Handle<Config>,
+    pub handle: Handle<Config>,
 }
 
 impl Default for Config {

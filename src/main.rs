@@ -19,18 +19,11 @@ use bevy_rapier3d::prelude::*;
 
 use engine::*;
 
-mod engine;
-
 #[derive(Component)]
 struct TopRightText;
 
 #[derive(Component)]
 struct PlayerHudText;
-
-#[derive(Resource)]
-pub struct DefaultMaterials {
-    pub gun_material: Handle<StandardMaterial>,
-}
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
 pub enum Modify {
@@ -178,7 +171,6 @@ fn setup_sys(
             ..default()
         });
     });
-    commands.insert_resource(DefaultMaterials { gun_material });
 }
 
 fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
@@ -289,29 +281,6 @@ fn spawn_player_sys(mut commands: Commands) {
     ));
 
     commands.spawn((Camera3dBundle::default(), RenderPlayer(0)));
-}
-
-#[derive(Resource)]
-pub struct Buffers {
-    // Place edge table and triangle table in uniform buffer
-    // They are too large to have inline in the shader
-    edge_table: Buffer,
-    tri_table: Buffer,
-    points: BufVec<Vec2>,
-    heights: BufVec<f32>,
-    voxels: Buffer,
-    voxels_staging: Buffer,
-    vertices: BufVec<Vec4>,
-    normals: BufVec<Vec4>,
-    uvs: BufVec<Vec2>,
-    indices: BufVec<u32>,
-    atomics: BufVec<u32>,
-    atomics_staging: Buffer,
-}
-
-struct BindingGroups {
-    simplex: BindGroup,
-    voxels: BindGroup,
 }
 
 fn update_fps_text_sys(

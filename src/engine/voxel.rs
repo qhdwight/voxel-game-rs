@@ -71,6 +71,24 @@ pub struct VoxelsPipeline {
     voxels_pipeline: ComputePipeline,
 }
 
+#[derive(Resource)]
+pub struct VoxelBuffers {
+    // Place edge table and triangle table in uniform buffer
+    // They are too large to have inline in the shader
+    edge_table: Buffer,
+    tri_table: Buffer,
+    points: BufVec<Vec2>,
+    heights: BufVec<f32>,
+    voxels: Buffer,
+    voxels_staging: Buffer,
+    vertices: BufVec<Vec4>,
+    normals: BufVec<Vec4>,
+    uvs: BufVec<Vec2>,
+    indices: BufVec<u32>,
+    atomics: BufVec<u32>,
+    atomics_staging: Buffer,
+}
+
 pub struct VoxelsPlugin;
 
 impl Plugin for VoxelsPlugin {
@@ -148,7 +166,7 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        world.insert_resource(Buffers { edge_table, tri_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
+        world.insert_resource(VoxelBuffers { edge_table, tri_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
 
         VoxelsPipeline {
             simplex_pipeline,
@@ -168,11 +186,16 @@ pub fn _sync_added_chunks_system(
     }
 }
 
+struct BindingGroups {
+    simplex: BindGroup,
+    voxels: BindGroup,
+}
+
 pub fn voxel_polygonize_system(
     mut commands: Commands,
     mut query: Query<(Entity, &Handle<Mesh>, &mut Chunk)>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut buffers: ResMut<Buffers>,
+    mut buffers: ResMut<VoxelBuffers>,
     time: Res<Time>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
