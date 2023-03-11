@@ -93,7 +93,6 @@ pub fn player_look_sys(
 pub fn player_move_sys(
     time: Res<Time>,
     physics_context: Res<RapierContext>,
-    sensor_query: Query<&Sensor>,
     mut query: Query<(
         Entity, &PlayerInput, &mut PlayerController,
         &Collider, &mut Transform, &mut Velocity

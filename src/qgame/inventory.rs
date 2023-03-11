@@ -386,7 +386,7 @@ pub fn render_inventory_sys(
                         mesh: mesh_handle.clone(),
                         material: materials.gun_material.clone(),
                         transform,
-                        visibility: Visibility { is_visible: is_equipped },
+                        visibility: Visibility::Visible,
                         ..default()
                     });
                 }

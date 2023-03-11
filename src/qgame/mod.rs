@@ -10,7 +10,6 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
     },
 };
-use wgpu::BufferUsages;
 
 pub use controller::*;
 pub use input::*;

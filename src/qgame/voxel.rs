@@ -76,7 +76,7 @@ impl Plugin for VoxelsPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<VoxelsPipeline>()
-            .add_system_to_stage(CoreStage::PreUpdate, voxel_polygonize_system);
+            .add_system(voxel_polygonize_system.in_base_set(CoreSet::PreUpdate));
     }
 }
 

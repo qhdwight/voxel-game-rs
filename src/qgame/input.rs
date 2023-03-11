@@ -86,18 +86,18 @@ fn get_axis(key_input: &Res<Input<KeyCode>>, key_pos: KeyCode, key_neg: KeyCode)
 }
 
 pub fn cursor_grab_sys(
-    mut windows: ResMut<Windows>,
+    mut windows: Query<&mut Window>,
     btn: Res<Input<MouseButton>>,
     key: Res<Input<KeyCode>>,
 ) {
-    let window = windows.get_primary_mut().unwrap();
+    let mut window = windows.single_mut();
     if btn.just_pressed(MouseButton::Left) {
-        window.set_cursor_grab_mode(CursorGrabMode::Locked);
-        window.set_cursor_visibility(false);
+        window.cursor.grab_mode = CursorGrabMode::Locked;
+        window.cursor.visible = false;
     }
     if key.just_pressed(KeyCode::Escape) {
-        window.set_cursor_grab_mode(CursorGrabMode::Confined);
-        window.set_cursor_visibility(true);
+        window.cursor.grab_mode = CursorGrabMode::None;
+        window.cursor.visible = true;
     }
 }
 
@@ -105,14 +105,14 @@ pub fn player_input_system(
     key_input: Res<Input<KeyCode>>,
     config: Res<Assets<Config>>,
     config_state: Res<ConfigState>,
-    mut windows: ResMut<Windows>,
+    mut window: Query<&mut Window>,
     mut mouse_events: EventReader<MouseMotion>,
     mut query: Query<&mut PlayerInput>)
 {
     if let Some(config) = config.get(&config_state.handle) {
         for mut player_input in query.iter_mut() {
-            let window = windows.get_primary_mut().unwrap();
-            if window.is_focused() {
+            let window = window.single_mut();
+            if window.focused {
                 let mut mouse_delta = Vec2::ZERO;
                 for mouse_event in mouse_events.iter() {
                     mouse_delta += mouse_event.delta;

@@ -8,13 +8,12 @@ use std::{
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
+    prelude::shape::Cube,
     render::{
         mesh::{Indices, VertexAttributeValues},
         render_resource::*,
     },
-    window::WindowDescriptor,
 };
-use bevy::prelude::shape::Cube;
 use bevy_rapier3d::prelude::*;
 
 use qgame::*;
@@ -32,20 +31,10 @@ pub struct DefaultMaterials {
     pub gun_material: Handle<StandardMaterial>,
 }
 
-#[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
-pub enum Modify {
-    Set,
-    Equip,
-    Item,
-    Look,
-    Move,
-    Pickup,
-}
-
-#[derive(Clone, Hash, Debug, PartialEq, Eq, SystemLabel)]
-pub enum Render {
-    Set,
-    Look,
+#[derive(Clone, Hash, Debug, PartialEq, Eq, SystemSet)]
+pub enum PlayerSet {
+    Logic,
+    Render,
 }
 
 fn main() {
@@ -55,13 +44,7 @@ fn main() {
             color: Color::WHITE,
             brightness: 0.25,
         })
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            window: WindowDescriptor {
-                title: String::from("QGame"),
-                ..default()
-            },
-            ..default()
-        }).set(AssetPlugin {
+        .add_plugins(DefaultPlugins.set(AssetPlugin {
             watch_for_changes: true,
             ..default()
         }))
@@ -75,37 +58,10 @@ fn main() {
         .add_plugin(InventoryPlugin)
         .add_asset::<Config>()
         .init_asset_loader::<ConfigAssetLoader>()
-        .add_startup_system(setup_sys)
-        .add_startup_system(spawn_ui_sys)
-        .add_startup_system(spawn_voxel_sys)
-        .add_startup_system(spawn_player_sys)
-        .add_system_set_to_stage(CoreStage::PreUpdate, SystemSet::new()
-            .with_system(player_input_system),
-        )
-        .add_system(cursor_grab_sys)
-        .add_system(update_fps_text_sys)
-        .add_system_set(SystemSet::new()
-            .label(Modify::Set)
-            .with_system(player_look_sys
-                .label(Modify::Look))
-            .with_system(player_move_sys
-                .label(Modify::Move).after(Modify::Look))
-            .with_system(modify_equip_state_sys
-                .label(Modify::Equip).after(Modify::Move))
-            .with_system(modify_item_sys
-                .label(Modify::Item).after(Modify::Equip))
-            .with_system(item_pickup_sys
-                .label(Modify::Pickup).after(Modify::Item))
-        )
-        .add_system_set(SystemSet::new()
-            .label(Render::Set).after(Modify::Set)
-            .with_system(item_pickup_animate_sys)
-            .with_system(render_player_camera_sys
-                .label(Render::Look))
-            .with_system(render_inventory_sys
-                .after(Render::Look))
-            .with_system(update_hud_system)
-        )
+        .add_startup_systems((setup_sys, spawn_ui_sys, spawn_voxel_sys, spawn_player_sys))
+        .add_systems((player_input_system.in_base_set(CoreSet::PreUpdate), cursor_grab_sys, update_fps_text_sys))
+        .add_systems((player_look_sys, player_move_sys, modify_equip_state_sys, modify_item_sys, item_pickup_sys).chain().in_set(PlayerSet::Logic))
+        .add_systems((item_pickup_animate_sys, render_player_camera_sys, render_inventory_sys, update_hud_system).chain().in_set(PlayerSet::Render))
         .run();
 }
 
@@ -206,7 +162,7 @@ fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
                         style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::WHITE },
                     },
                 ],
-                alignment: Default::default(),
+                ..default()
             },
             ..default()
         })
@@ -231,7 +187,7 @@ fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
                         style: TextStyle { font: font.clone(), font_size: 12.0, color: Color::ANTIQUE_WHITE },
                     },
                 ],
-                alignment: Default::default(),
+                ..default()
             },
             ..default()
         },
@@ -318,7 +274,6 @@ struct BindingGroups {
 }
 
 fn update_fps_text_sys(
-    time: Res<Time>,
     diagnostics: Res<Diagnostics>,
     mut query: Query<&mut Text, With<TopRightText>>,
 ) {

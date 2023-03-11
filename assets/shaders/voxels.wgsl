@@ -61,7 +61,7 @@ var<storage, read_write> out_indices: IndexBuffer;
 var<storage, read_write> out_uvs: UvBuffer;
 
 
-let chunk_sz = 32;
+const chunk_sz = 32;
 
 fn get_flat_index(pos: vec3<i32>) -> u32 {
     return u32(pos.x + pos.y * chunk_sz + pos.z * chunk_sz * chunk_sz);
