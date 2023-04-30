@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.4"
-bevy = { version = "0.10.0", features = ["serialize"] }
+bevy = { version = "0.10.1", features = ["serialize"] }
 bevy_rapier3d = { version = "0.21.0", features = ["enhanced-determinism", "debug-render"] }
 bytemuck = "1.7"
 ron = "0.8.0"
@@ -20,7 +20,7 @@ wgpu = "0.15.0"
 opt-level = 0
 
 [profile.dev.package."*"]
-opt-level = 3
+opt-level = 0
 
 [profile.release]
 opt-level = 3

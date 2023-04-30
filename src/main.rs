@@ -13,8 +13,8 @@ use bevy::{
         mesh::{Indices, VertexAttributeValues},
         render_resource::*,
     },
+    render::view::NoFrustumCulling,
 };
-use bevy::render::view::NoFrustumCulling;
 use bevy_rapier3d::prelude::*;
 
 use qgame::*;

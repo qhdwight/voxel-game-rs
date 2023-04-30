@@ -22,7 +22,7 @@ use crate::*;
 const CHUNK_SZ: usize = 32;
 const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
 const CHUNK_SZ_3: usize = CHUNK_SZ * CHUNK_SZ * CHUNK_SZ;
-const COMPUTE_TILE_SZ: usize = 8;
+const COMPUTE_TILE_SZ: usize = 4;
 
 #[derive(Component)]
 pub struct Chunk {
@@ -225,7 +225,7 @@ pub fn voxel_polygonize_system(
                 let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
                 pass.set_pipeline(&pipeline.simplex_pipeline);
                 pass.set_bind_group(0, &binding_groups.simplex, &[]);
-                pass.dispatch_workgroups((CHUNK_SZ / 32) as u32, (CHUNK_SZ / 32) as u32, 1);
+                pass.dispatch_workgroups(1, 1, 1);
             }
             buffers.heights.encode_read(CHUNK_SZ_2, &mut command_encoder);
             render_queue.submit(once(command_encoder.finish()));
@@ -237,7 +237,8 @@ pub fn voxel_polygonize_system(
                 for y in 0..CHUNK_SZ {
                     for x in 0..CHUNK_SZ {
                         let noise01 = (buffers.heights.as_slice()[x + z * CHUNK_SZ] + 1.0) * 0.5;
-                        let height = noise01 * 4.0 + 8.0 - (y as f32);
+                        // let height = noise01 * 4.0 + 8.0 - (y as f32);
+                        let height = noise01 * 1.0 + 2.0 - (y as f32);
                         let mut density = 0.0;
 
                         if height > 1.0 {
@@ -327,7 +328,7 @@ pub fn voxel_polygonize_system(
         }
 
         // TODO:perf inefficient
-        commands.entity(entity).insert(Collider::from_bevy_mesh(mesh, &ComputedColliderShape::TriMesh).unwrap());
+        // commands.entity(entity).insert(Collider::from_bevy_mesh(mesh, &ComputedColliderShape::TriMesh).unwrap());
     }
 
     // println!("Elapsed: {:.2?}", now.elapsed());
