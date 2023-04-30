@@ -22,6 +22,7 @@ use crate::*;
 const CHUNK_SZ: usize = 32;
 const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
 const CHUNK_SZ_3: usize = CHUNK_SZ * CHUNK_SZ * CHUNK_SZ;
+const COMPUTE_TILE_SZ: usize = 4;
 
 #[derive(Component)]
 pub struct Chunk {
@@ -85,14 +86,14 @@ impl FromWorld for VoxelsPipeline {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
         let _asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("edge table buffer"),
-            contents: cast_slice(EDGE_TABLE),
+        let triangle_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("tri table buffer"),
+            contents: cast_slice(TRIANGLE_TABLE),
             usage: BufferUsages::STORAGE,
         });
-        let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("tri table buffer"),
-            contents: cast_slice(TRI_TABLE),
+        let block_face_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("block face table buffer"),
+            contents: cast_slice(BLOCK_FACE_TABLE),
             usage: BufferUsages::STORAGE,
         });
         let points: BufVec<Vec2> = BufVec::with_capacity(false, CHUNK_SZ_2, render_device);
@@ -109,10 +110,10 @@ impl FromWorld for VoxelsPipeline {
             usage: BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let vertices: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
-        let uvs: BufVec<Vec2> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
-        let normals: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
-        let indices: BufVec<u32> = BufVec::with_capacity(true, CHUNK_SZ_3 * 6 * 6, render_device);
+        let vertices: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 12, render_device);
+        let uvs: BufVec<Vec2> = BufVec::with_capacity(true, CHUNK_SZ_3 * 12, render_device);
+        let normals: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 12, render_device);
+        let indices: BufVec<u32> = BufVec::with_capacity(true, CHUNK_SZ_3 * 12, render_device);
         let atomics: BufVec<u32> = BufVec::with_capacity(true, 2, render_device);
         let atomics_staging = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("atomics staging buffer"),
@@ -147,7 +148,7 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        world.insert_resource(Buffers { edge_table, tri_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
+        world.insert_resource(Buffers { triangle_table, block_face_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
 
         VoxelsPipeline {
             simplex_pipeline,
@@ -205,8 +206,8 @@ pub fn voxel_polygonize_system(
                 label: Some("voxels binding"),
                 layout: &pipeline.voxels_pipeline.get_bind_group_layout(0),
                 entries: &[
-                    BindGroupEntry { binding: 0, resource: buffers.edge_table.as_entire_binding() },
-                    BindGroupEntry { binding: 1, resource: buffers.tri_table.as_entire_binding() },
+                    BindGroupEntry { binding: 0, resource: buffers.triangle_table.as_entire_binding() },
+                    BindGroupEntry { binding: 1, resource: buffers.block_face_table.as_entire_binding() },
                     BindGroupEntry { binding: 2, resource: buffers.voxels.as_entire_binding() },
                     BindGroupEntry { binding: 3, resource: buffers.atomics.buffer().as_entire_binding() },
                     BindGroupEntry { binding: 4, resource: buffers.vertices.buffer().as_entire_binding() },
@@ -224,7 +225,7 @@ pub fn voxel_polygonize_system(
                 let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
                 pass.set_pipeline(&pipeline.simplex_pipeline);
                 pass.set_bind_group(0, &binding_groups.simplex, &[]);
-                pass.dispatch_workgroups((CHUNK_SZ / 32) as u32, (CHUNK_SZ / 32) as u32, 1);
+                pass.dispatch_workgroups(1, 1, 1);
             }
             buffers.heights.encode_read(CHUNK_SZ_2, &mut command_encoder);
             render_queue.submit(once(command_encoder.finish()));
@@ -236,7 +237,8 @@ pub fn voxel_polygonize_system(
                 for y in 0..CHUNK_SZ {
                     for x in 0..CHUNK_SZ {
                         let noise01 = (buffers.heights.as_slice()[x + z * CHUNK_SZ] + 1.0) * 0.5;
-                        let height = noise01 * 4.0 + 8.0 - (y as f32);
+                        // let height = noise01 * 4.0 + 8.0 - (y as f32);
+                        let height = noise01 * 1.0 + 2.0 - (y as f32);
                         let mut density = 0.0;
 
                         if height > 1.0 {
@@ -265,7 +267,7 @@ pub fn voxel_polygonize_system(
             let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline.voxels_pipeline);
             pass.set_bind_group(0, &binding_groups.voxels, &[]);
-            let dispatch_size = (CHUNK_SZ / 8) as u32;
+            let dispatch_size = (CHUNK_SZ / COMPUTE_TILE_SZ) as u32;
             pass.dispatch_workgroups(dispatch_size, dispatch_size, dispatch_size);
         }
         buffers.atomics.encode_read(2, &mut command_encoder);
@@ -326,7 +328,7 @@ pub fn voxel_polygonize_system(
         }
 
         // TODO:perf inefficient
-        commands.entity(entity).insert(Collider::from_bevy_mesh(mesh, &ComputedColliderShape::TriMesh).unwrap());
+        // commands.entity(entity).insert(Collider::from_bevy_mesh(mesh, &ComputedColliderShape::TriMesh).unwrap());
     }
 
     // println!("Elapsed: {:.2?}", now.elapsed());

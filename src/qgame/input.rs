@@ -6,8 +6,8 @@ use bevy::{
     prelude::*,
     reflect::TypeUuid,
     utils::BoxedFuture,
+    window::CursorGrabMode,
 };
-use bevy::window::CursorGrabMode;
 use flagset::{flags, FlagSet};
 use serde::{Deserialize, Serialize};
 
@@ -154,7 +154,7 @@ impl AssetLoader for ConfigAssetLoader {
         load_context: &'a mut LoadContext,
     ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
         Box::pin(async move {
-            let asset: Config = toml::from_slice(bytes)?;
+            let asset: Config = toml::from_str(std::str::from_utf8(bytes)?)?;
             load_context.set_default_asset(LoadedAsset::new(asset));
             Ok(())
         })
