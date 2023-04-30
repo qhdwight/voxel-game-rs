@@ -22,6 +22,7 @@ use crate::*;
 const CHUNK_SZ: usize = 32;
 const CHUNK_SZ_2: usize = CHUNK_SZ * CHUNK_SZ;
 const CHUNK_SZ_3: usize = CHUNK_SZ * CHUNK_SZ * CHUNK_SZ;
+const COMPUTE_TILE_SZ: usize = 8;
 
 #[derive(Component)]
 pub struct Chunk {
@@ -85,11 +86,6 @@ impl FromWorld for VoxelsPipeline {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
         let _asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("edge table buffer"),
-            contents: cast_slice(EDGE_TABLE),
-            usage: BufferUsages::STORAGE,
-        });
         let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("tri table buffer"),
             contents: cast_slice(TRI_TABLE),
@@ -109,10 +105,10 @@ impl FromWorld for VoxelsPipeline {
             usage: BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let vertices: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
-        let uvs: BufVec<Vec2> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
-        let normals: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
-        let indices: BufVec<u32> = BufVec::with_capacity(true, CHUNK_SZ_3 * 6 * 6, render_device);
+        let vertices: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 12, render_device);
+        let uvs: BufVec<Vec2> = BufVec::with_capacity(true, CHUNK_SZ_3 * 12, render_device);
+        let normals: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 12, render_device);
+        let indices: BufVec<u32> = BufVec::with_capacity(true, CHUNK_SZ_3 * 12, render_device);
         let atomics: BufVec<u32> = BufVec::with_capacity(true, 2, render_device);
         let atomics_staging = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("atomics staging buffer"),
@@ -147,7 +143,7 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        world.insert_resource(Buffers { edge_table, tri_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
+        world.insert_resource(Buffers { triangle_table: tri_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
 
         VoxelsPipeline {
             simplex_pipeline,
@@ -205,14 +201,13 @@ pub fn voxel_polygonize_system(
                 label: Some("voxels binding"),
                 layout: &pipeline.voxels_pipeline.get_bind_group_layout(0),
                 entries: &[
-                    BindGroupEntry { binding: 0, resource: buffers.edge_table.as_entire_binding() },
-                    BindGroupEntry { binding: 1, resource: buffers.tri_table.as_entire_binding() },
-                    BindGroupEntry { binding: 2, resource: buffers.voxels.as_entire_binding() },
-                    BindGroupEntry { binding: 3, resource: buffers.atomics.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 4, resource: buffers.vertices.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 5, resource: buffers.normals.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 6, resource: buffers.indices.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 7, resource: buffers.uvs.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 0, resource: buffers.triangle_table.as_entire_binding() },
+                    BindGroupEntry { binding: 1, resource: buffers.voxels.as_entire_binding() },
+                    BindGroupEntry { binding: 2, resource: buffers.atomics.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 3, resource: buffers.vertices.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 4, resource: buffers.normals.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 5, resource: buffers.indices.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 6, resource: buffers.uvs.buffer().as_entire_binding() },
                 ],
             }),
         };
@@ -265,7 +260,7 @@ pub fn voxel_polygonize_system(
             let mut pass = command_encoder.begin_compute_pass(&ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline.voxels_pipeline);
             pass.set_bind_group(0, &binding_groups.voxels, &[]);
-            let dispatch_size = (CHUNK_SZ / 8) as u32;
+            let dispatch_size = (CHUNK_SZ / COMPUTE_TILE_SZ) as u32;
             pass.dispatch_workgroups(dispatch_size, dispatch_size, dispatch_size);
         }
         buffers.atomics.encode_read(2, &mut command_encoder);

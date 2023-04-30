@@ -14,6 +14,7 @@ use bevy::{
         render_resource::*,
     },
 };
+use bevy::render::view::NoFrustumCulling;
 use bevy_rapier3d::prelude::*;
 
 use qgame::*;
@@ -52,7 +53,7 @@ fn main() {
             ..default()
         })
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
-        .add_plugin(RapierDebugRenderPlugin::default())
+        // .add_plugin(RapierDebugRenderPlugin::default())
         .add_plugin(VoxelsPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(InventoryPlugin)
@@ -213,6 +214,7 @@ fn spawn_voxel_sys(
     commands.spawn(Map::default());
     commands.spawn((
         Chunk::new(IVec3::ZERO),
+        NoFrustumCulling,
         PbrBundle {
             mesh: mesh_handle.clone(),
             material: ground_mat_handle.clone(),
@@ -254,8 +256,7 @@ fn spawn_player_sys(mut commands: Commands) {
 pub struct Buffers {
     // Place edge table and triangle table in uniform buffer
     // They are too large to have inline in the shader
-    edge_table: Buffer,
-    tri_table: Buffer,
+    triangle_table: Buffer,
     points: BufVec<Vec2>,
     heights: BufVec<f32>,
     voxels: Buffer,
