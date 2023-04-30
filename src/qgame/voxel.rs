@@ -86,9 +86,14 @@ impl FromWorld for VoxelsPipeline {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
         let _asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
+        let triangle_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("tri table buffer"),
-            contents: cast_slice(TRI_TABLE),
+            contents: cast_slice(TRIANGLE_TABLE),
+            usage: BufferUsages::STORAGE,
+        });
+        let block_face_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("block face table buffer"),
+            contents: cast_slice(BLOCK_FACE_TABLE),
             usage: BufferUsages::STORAGE,
         });
         let points: BufVec<Vec2> = BufVec::with_capacity(false, CHUNK_SZ_2, render_device);
@@ -143,7 +148,7 @@ impl FromWorld for VoxelsPipeline {
             entry_point: "main",
         });
 
-        world.insert_resource(Buffers { triangle_table: tri_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
+        world.insert_resource(Buffers { triangle_table, block_face_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
 
         VoxelsPipeline {
             simplex_pipeline,
@@ -202,12 +207,13 @@ pub fn voxel_polygonize_system(
                 layout: &pipeline.voxels_pipeline.get_bind_group_layout(0),
                 entries: &[
                     BindGroupEntry { binding: 0, resource: buffers.triangle_table.as_entire_binding() },
-                    BindGroupEntry { binding: 1, resource: buffers.voxels.as_entire_binding() },
-                    BindGroupEntry { binding: 2, resource: buffers.atomics.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 3, resource: buffers.vertices.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 4, resource: buffers.normals.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 5, resource: buffers.indices.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 6, resource: buffers.uvs.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 1, resource: buffers.block_face_table.as_entire_binding() },
+                    BindGroupEntry { binding: 2, resource: buffers.voxels.as_entire_binding() },
+                    BindGroupEntry { binding: 3, resource: buffers.atomics.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 4, resource: buffers.vertices.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 5, resource: buffers.normals.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 6, resource: buffers.indices.buffer().as_entire_binding() },
+                    BindGroupEntry { binding: 7, resource: buffers.uvs.buffer().as_entire_binding() },
                 ],
             }),
         };

@@ -257,6 +257,7 @@ pub struct Buffers {
     // Place edge table and triangle table in uniform buffer
     // They are too large to have inline in the shader
     triangle_table: Buffer,
+    block_face_table: Buffer,
     points: BufVec<Vec2>,
     heights: BufVec<f32>,
     voxels: Buffer,
