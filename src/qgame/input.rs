@@ -4,6 +4,7 @@ use bevy::{
     asset::{AssetLoader, LoadContext, LoadedAsset},
     input::mouse::MouseMotion,
     prelude::*,
+    reflect::TypePath,
     reflect::TypeUuid,
     utils::BoxedFuture,
 };
@@ -30,7 +31,7 @@ pub struct PlayerInput {
     pub wanted_item_slot: Option<u8>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, TypeUuid)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, TypeUuid, TypePath)]
 #[uuid = "9ac18a62-063a-4fa1-9575-d295ce69997b"]
 pub struct Config {
     pub sensitivity: f32,
@@ -62,10 +63,10 @@ impl Default for Config {
             key_right: KeyCode::D,
             key_up: KeyCode::Q,
             key_down: KeyCode::E,
-            key_sprint: KeyCode::LShift,
+            key_sprint: KeyCode::ShiftLeft,
             key_jump: KeyCode::Space,
             key_fly: KeyCode::F,
-            key_crouch: KeyCode::LControl,
+            key_crouch: KeyCode::ControlLeft,
             key_fire: KeyCode::Q,
             sensitivity: 0.5,
             key_reload: KeyCode::R,

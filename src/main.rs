@@ -3,10 +3,14 @@ extern crate core;
 use std::{
     f32::consts::TAU,
     fmt::Write,
+    time::Duration,
 };
 
 use bevy::{
-    diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
+    asset::ChangeWatcher,
+    diagnostic::DiagnosticsStore,
+    diagnostic::FrameTimeDiagnosticsPlugin,
+    ecs::schedule::ScheduleLabel,
     prelude::*,
     prelude::shape::Cube,
     render::{
@@ -44,24 +48,30 @@ fn main() {
             color: Color::WHITE,
             brightness: 0.25,
         })
-        .add_plugins(DefaultPlugins.set(AssetPlugin {
-            watch_for_changes: true,
-            ..default()
-        }))
         .insert_resource(RapierConfiguration {
             ..default()
         })
-        .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
-        .add_plugin(RapierDebugRenderPlugin::default())
-        .add_plugin(VoxelsPlugin)
-        .add_plugin(FrameTimeDiagnosticsPlugin::default())
-        .add_plugin(InventoryPlugin)
+        .add_plugins((
+            DefaultPlugins.set(AssetPlugin {
+                watch_for_changes: Some(ChangeWatcher {
+                    delay: Duration::from_millis(100),
+                }),
+                ..default()
+            }),
+            RapierPhysicsPlugin::<NoUserData>::default(),
+            VoxelsPlugin,
+            FrameTimeDiagnosticsPlugin::default(),
+            InventoryPlugin,
+        ))
         .add_asset::<Config>()
         .init_asset_loader::<ConfigAssetLoader>()
-        .add_startup_systems((setup_sys, spawn_ui_sys, spawn_voxel_sys, spawn_player_sys))
-        .add_systems((player_input_system.in_base_set(CoreSet::PreUpdate), cursor_grab_sys, update_fps_text_sys))
-        .add_systems((player_look_sys, player_move_sys, modify_equip_state_sys, modify_item_sys, item_pickup_sys).chain().in_set(PlayerSet::Logic))
-        .add_systems((item_pickup_animate_sys, render_player_camera_sys, render_inventory_sys, update_hud_system).chain().in_set(PlayerSet::Render))
+        .add_systems(Startup, (setup_sys, spawn_ui_sys, spawn_voxel_sys, spawn_player_sys))
+        .add_systems(PreUpdate, player_input_system)
+        .add_systems(Update, (
+            (cursor_grab_sys, update_fps_text_sys),
+            (player_look_sys, player_move_sys, modify_equip_state_sys, modify_item_sys, item_pickup_sys).chain().in_set(PlayerSet::Logic),
+            (item_pickup_animate_sys, render_player_camera_sys, render_inventory_sys, update_hud_system).chain().in_set(PlayerSet::Render),
+        ))
         .run();
 }
 
@@ -140,26 +150,21 @@ fn setup_sys(
     commands.insert_resource(DefaultMaterials { gun_material });
 }
 
-fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
-    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
-
+fn spawn_ui_sys(mut commands: Commands) {
     commands
         .spawn(TextBundle {
             style: Style {
                 align_self: AlignSelf::FlexEnd,
                 position_type: PositionType::Absolute,
-                position: UiRect {
-                    top: Val::Px(5.0),
-                    right: Val::Px(5.0),
-                    ..default()
-                },
+                top: Val::Px(5.0),
+                left: Val::Px(5.0),
                 ..default()
             },
             text: Text {
                 sections: vec![
                     TextSection {
                         value: "".to_string(),
-                        style: TextStyle { font: font.clone(), font_size: 16.0, color: Color::WHITE },
+                        style: TextStyle { font_size: 16.0, color: Color::WHITE, ..default() },
                     },
                 ],
                 ..default()
@@ -173,18 +178,15 @@ fn spawn_ui_sys(asset_server: Res<AssetServer>, mut commands: Commands) {
             style: Style {
                 align_self: AlignSelf::FlexEnd,
                 position_type: PositionType::Absolute,
-                position: UiRect {
-                    bottom: Val::Px(5.0),
-                    left: Val::Px(5.0),
-                    ..default()
-                },
+                bottom: Val::Px(5.0),
+                left: Val::Px(5.0),
                 ..default()
             },
             text: Text {
                 sections: vec![
                     TextSection {
                         value: "".to_string(),
-                        style: TextStyle { font: font.clone(), font_size: 12.0, color: Color::ANTIQUE_WHITE },
+                        style: TextStyle { font_size: 12.0, color: Color::ANTIQUE_WHITE, ..default() },
                     },
                 ],
                 ..default()
@@ -250,31 +252,8 @@ fn spawn_player_sys(mut commands: Commands) {
     commands.spawn((Camera3dBundle::default(), RenderPlayer(0)));
 }
 
-#[derive(Resource)]
-pub struct Buffers {
-    // Place edge table and triangle table in uniform buffer
-    // They are too large to have inline in the shader
-    edge_table: Buffer,
-    tri_table: Buffer,
-    points: BufVec<Vec2>,
-    heights: BufVec<f32>,
-    voxels: Buffer,
-    voxels_staging: Buffer,
-    vertices: BufVec<Vec4>,
-    normals: BufVec<Vec4>,
-    uvs: BufVec<Vec2>,
-    indices: BufVec<u32>,
-    atomics: BufVec<u32>,
-    atomics_staging: Buffer,
-}
-
-struct BindingGroups {
-    simplex: BindGroup,
-    voxels: BindGroup,
-}
-
 fn update_fps_text_sys(
-    diagnostics: Res<Diagnostics>,
+    diagnostics: Res<DiagnosticsStore>,
     mut query: Query<&mut Text, With<TopRightText>>,
 ) {
     for mut text in query.iter_mut() {

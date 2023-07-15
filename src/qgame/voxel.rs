@@ -70,90 +70,106 @@ pub struct VoxelsPipeline {
     voxels_pipeline: ComputePipeline,
 }
 
+#[derive(Resource)]
+pub struct VoxelBuffers {
+    // Place edge table and triangle table in uniform buffer
+    // They are too large to have inline in the shader
+    edge_table: Buffer,
+    tri_table: Buffer,
+    points: BufVec<Vec2>,
+    heights: BufVec<f32>,
+    voxels: Buffer,
+    voxels_staging: Buffer,
+    vertices: BufVec<Vec4>,
+    normals: BufVec<Vec4>,
+    uvs: BufVec<Vec2>,
+    indices: BufVec<u32>,
+    atomics: BufVec<u32>,
+    atomics_staging: Buffer,
+}
+
+struct BindingGroups {
+    simplex: BindGroup,
+    voxels: BindGroup,
+}
+
 pub struct VoxelsPlugin;
 
 impl Plugin for VoxelsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .init_resource::<VoxelsPipeline>()
-            .add_system(voxel_polygonize_system.in_base_set(CoreSet::PreUpdate));
+            .add_systems(PreUpdate, (
+                init_pipeline_system.run_if(not(resource_exists::<VoxelsPipeline>())),
+                voxel_polygonize_system.run_if(resource_exists::<VoxelsPipeline>()),
+            ));
     }
 }
 
-impl FromWorld for VoxelsPipeline {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.get_resource::<RenderDevice>().unwrap();
-        let _asset_server = world.get_resource::<AssetServer>().unwrap();
+fn init_pipeline_system(mut commands: Commands, render_device: Res<RenderDevice>) {
+    let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("edge table buffer"),
+        contents: cast_slice(EDGE_TABLE),
+        usage: BufferUsages::STORAGE,
+    });
+    let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("tri table buffer"),
+        contents: cast_slice(TRI_TABLE),
+        usage: BufferUsages::STORAGE,
+    });
+    let points: BufVec<Vec2> = BufVec::with_capacity(false, CHUNK_SZ_2, render_device.as_ref());
+    let heights: BufVec<f32> = BufVec::with_capacity(true, CHUNK_SZ_2, render_device.as_ref());
+    let voxels = render_device.create_buffer(&BufferDescriptor {
+        label: Some("voxels buffer"),
+        size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let voxels_staging = render_device.create_buffer(&BufferDescriptor {
+        label: Some("voxels staging buffer"),
+        size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
+        usage: BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let vertices: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device.as_ref());
+    let uvs: BufVec<Vec2> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device.as_ref());
+    let normals: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device.as_ref());
+    let indices: BufVec<u32> = BufVec::with_capacity(true, CHUNK_SZ_3 * 6 * 6, render_device.as_ref());
+    let atomics: BufVec<u32> = BufVec::with_capacity(true, 2, render_device.as_ref());
+    let atomics_staging = render_device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("atomics staging buffer"),
+        contents: cast_slice(&[0u32, 0u32]),
+        usage: BufferUsages::COPY_SRC,
+    });
 
-        let edge_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("edge table buffer"),
-            contents: cast_slice(EDGE_TABLE),
-            usage: BufferUsages::STORAGE,
-        });
-        let tri_table = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("tri table buffer"),
-            contents: cast_slice(TRI_TABLE),
-            usage: BufferUsages::STORAGE,
-        });
-        let points: BufVec<Vec2> = BufVec::with_capacity(false, CHUNK_SZ_2, render_device);
-        let heights: BufVec<f32> = BufVec::with_capacity(true, CHUNK_SZ_2, render_device);
-        let voxels = render_device.create_buffer(&BufferDescriptor {
-            label: Some("voxels buffer"),
-            size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let voxels_staging = render_device.create_buffer(&BufferDescriptor {
-            label: Some("voxels staging buffer"),
-            size: (CHUNK_SZ_3 * size_of::<Voxel>()) as BufferAddress,
-            usage: BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let vertices: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
-        let uvs: BufVec<Vec2> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
-        let normals: BufVec<Vec4> = BufVec::with_capacity(true, CHUNK_SZ_3 * 4 * 6, render_device);
-        let indices: BufVec<u32> = BufVec::with_capacity(true, CHUNK_SZ_3 * 6 * 6, render_device);
-        let atomics: BufVec<u32> = BufVec::with_capacity(true, 2, render_device);
-        let atomics_staging = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("atomics staging buffer"),
-            contents: cast_slice(&[0u32, 0u32]),
-            usage: BufferUsages::COPY_SRC,
-        });
+    // let simplex_shader = asset_server.load("shaders/simplex.wgsl");
+    let shader_source = include_str!("../../assets/shaders/simplex.wgsl");
+    let shader = render_device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("simplex shader"),
+        source: ShaderSource::Wgsl(shader_source.into()),
+    });
+    // TODO:arch update to Bevy compute creation when they allow PipelineCache to be used in main world
+    let simplex_pipeline = render_device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("simplex pipeline"),
+        layout: None,
+        module: &shader,
+        entry_point: "main",
+    });
 
-        // let simplex_shader = asset_server.load("shaders/simplex.wgsl");
-        let shader_source = include_str!("../../assets/shaders/simplex.wgsl");
-        let shader = render_device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("simplex shader"),
-            source: ShaderSource::Wgsl(shader_source.into()),
-        });
-        // TODO:arch update to Bevy compute creation when they allow PipelineCache to be used in main world
-        let simplex_pipeline = render_device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("simplex pipeline"),
-            layout: None,
-            module: &shader,
-            entry_point: "main",
-        });
+    // let voxel_shader = asset_server.load("shaders/voxels.wgsl");
+    let shader_source = include_str!("../../assets/shaders/voxels.wgsl");
+    let shader = render_device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("voxels shader"),
+        source: ShaderSource::Wgsl(shader_source.into()),
+    });
+    let voxels_pipeline = render_device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("voxels pipeline"),
+        layout: None,
+        module: &shader,
+        entry_point: "main",
+    });
 
-        // let voxel_shader = asset_server.load("shaders/voxels.wgsl");
-        let shader_source = include_str!("../../assets/shaders/voxels.wgsl");
-        let shader = render_device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("voxels shader"),
-            source: ShaderSource::Wgsl(shader_source.into()),
-        });
-        let voxels_pipeline = render_device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("voxels pipeline"),
-            layout: None,
-            module: &shader,
-            entry_point: "main",
-        });
-
-        world.insert_resource(Buffers { edge_table, tri_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
-
-        VoxelsPipeline {
-            simplex_pipeline,
-            voxels_pipeline,
-        }
-    }
+    commands.insert_resource(VoxelBuffers { edge_table, tri_table, points, heights, voxels, voxels_staging, vertices, normals, uvs, indices, atomics, atomics_staging });
+    commands.insert_resource(VoxelsPipeline { simplex_pipeline, voxels_pipeline });
 }
 
 pub fn _sync_added_chunks_system(
@@ -171,7 +187,7 @@ pub fn voxel_polygonize_system(
     mut commands: Commands,
     mut query: Query<(Entity, &Handle<Mesh>, &mut Chunk)>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut buffers: ResMut<Buffers>,
+    mut buffers: ResMut<VoxelBuffers>,
     time: Res<Time>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,

@@ -7,6 +7,7 @@ use std::{
 use bevy::{
     asset::{AssetLoader, LoadContext, LoadedAsset},
     prelude::*,
+    reflect::TypePath,
     reflect::TypeUuid,
     utils::{BoxedFuture, HashMap},
 };
@@ -34,7 +35,7 @@ pub struct ItemStateProps {
     pub is_persistent: bool,
 }
 
-#[derive(Serialize, Deserialize, TypeUuid)]
+#[derive(Serialize, Deserialize, TypeUuid, TypePath)]
 #[uuid = "2cc54620-95c6-4522-b40e-0a4991ebae5f"]
 pub struct ItemProps {
     pub name: ItemName,
@@ -43,7 +44,7 @@ pub struct ItemProps {
     pub equip_states: HashMap<EquipStateName, ItemStateProps>,
 }
 
-#[derive(Serialize, Deserialize, TypeUuid)]
+#[derive(Serialize, Deserialize, TypeUuid, TypePath)]
 #[uuid = "46e9c7af-27c2-4560-86e7-df48f9e84729"]
 pub struct WeaponProps {
     pub damage: u16,
@@ -51,7 +52,7 @@ pub struct WeaponProps {
     pub item_props: ItemProps,
 }
 
-#[derive(Serialize, Deserialize, TypeUuid)]
+#[derive(Serialize, Deserialize, TypeUuid, TypePath)]
 #[uuid = "df56751c-7560-420d-b480-eb8fb6f9b9bf"]
 pub struct GunProps {
     pub mag_size: u16,
