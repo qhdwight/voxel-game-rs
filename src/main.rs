@@ -10,7 +10,6 @@ use bevy::{
     asset::ChangeWatcher,
     diagnostic::DiagnosticsStore,
     diagnostic::FrameTimeDiagnosticsPlugin,
-    ecs::schedule::ScheduleLabel,
     prelude::*,
     prelude::shape::Cube,
     render::{
@@ -29,11 +28,6 @@ struct TopRightText;
 
 #[derive(Component)]
 struct PlayerHudText;
-
-#[derive(Resource)]
-pub struct DefaultMaterials {
-    pub gun_material: Handle<StandardMaterial>,
-}
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq, SystemSet)]
 pub enum PlayerSet {
@@ -86,16 +80,6 @@ fn setup_sys(
     let config: Handle<Config> = asset_server.load("default.config.toml");
     commands.insert_resource(ConfigState { handle: config });
 
-    // commands.spawn_bundle(PointLightBundle {
-    //     point_light: PointLight {
-    //         intensity: 2000.0,
-    //         shadows_enabled: true,
-    //         ..default()
-    //     },
-    //     transform: Transform::from_xyz(38.0, -34.0, 40.0),
-    //     ..default()
-    // });
-
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
             illuminance: 2000.0,
@@ -124,35 +108,30 @@ fn setup_sys(
         ));
     }
 
-    let gun_material = materials.add(StandardMaterial {
-        base_color: Color::DARK_GRAY,
-        metallic: 0.05,
-        perceptual_roughness: 0.1,
-        ..default()
+    commands.spawn(
+        (
+            Transform::from_xyz(8.0, 16.0, 8.0),
+            GlobalTransform::default(),
+            Collider::ball(0.5),
+            Sensor,
+            Visibility::Visible,
+            ComputedVisibility::default(),
+            ItemPickup { item_name: ItemName::from("rifle") },
+        )
+    ).with_children(|parent| {
+        parent.spawn((
+            SceneBundle {
+                scene: asset_server.load("models/rifle.glb#Scene0"),
+                ..default()
+            },
+            ItemPickupVisual::default(),
+        ));
     });
-
-    // let rifle_handle = asset_server.load("models/rifle.gltf#Mesh0/Primitive0");
-    // commands.spawn()
-    //     .insert(GlobalTransform::default())
-    //     .with_children(|parent| {
-    //         parent.spawn_bundle(PbrBundle {
-    //             mesh: rifle_handle.clone(),
-    //             material: gun_material.clone(),
-    //             ..default()
-    //         })
-    //             .insert(ItemPickupVisual::default());
-    //     })
-    //     .insert(Collider::ball(0.5))
-    //     .insert(Sensor(true))
-    //     .insert(Transform::from_xyz(0.0, 20.0, 8.0))
-    //     .insert(ItemPickup { item_name: ItemName::from("rifle") });
-
-    commands.insert_resource(DefaultMaterials { gun_material });
 }
 
 fn spawn_ui_sys(mut commands: Commands) {
-    commands
-        .spawn(TextBundle {
+    commands.spawn((
+        TextBundle {
             style: Style {
                 align_self: AlignSelf::FlexEnd,
                 position_type: PositionType::Absolute,
@@ -170,8 +149,9 @@ fn spawn_ui_sys(mut commands: Commands) {
                 ..default()
             },
             ..default()
-        })
-        .insert(TopRightText);
+        },
+        TopRightText
+    ));
 
     commands.spawn((
         TextBundle {
@@ -279,7 +259,7 @@ fn update_fps_text_sys(
 
 fn update_hud_system(
     mut text_query: Query<&mut Text, With<PlayerHudText>>,
-    player_query: Query<&Transform, With<PerspectiveProjection>>,
+    player_query: Query<&Transform, With<Projection>>,
     mut item_query: Query<&mut Item>,
     inv_query: Query<(&Inventory, &PlayerInput)>,
 ) {
