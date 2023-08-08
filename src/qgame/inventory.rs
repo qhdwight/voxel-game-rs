@@ -3,6 +3,7 @@ use std::{
     option::Option,
     time::Duration,
 };
+use std::str::from_utf8;
 
 use bevy::{
     asset::{AssetLoader, LoadContext, LoadedAsset},
@@ -115,7 +116,7 @@ impl AssetLoader for ConfigAssetLoader {
         load_context: &'a mut LoadContext,
     ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
         Box::pin(async move {
-            let asset: GunProps = toml::from_slice(bytes)?;
+            let asset: GunProps = toml::from_str(from_utf8(bytes)?)?;
             load_context.set_default_asset(LoadedAsset::new(asset));
             Ok(())
         })

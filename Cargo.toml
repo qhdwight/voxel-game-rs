@@ -10,7 +10,7 @@ bevy = { version = "0.11.0", features = ["serialize"] }
 bevy_rapier3d = { version = "0.22.0", features = ["enhanced-determinism", "debug-render"] }
 bytemuck = "1.7"
 ron = "0.8.0"
-toml = "0.5.9"
+toml = "0.7.3"
 flagset = "0.4.3"
 serde = "1.0.149"
 smartstring = { version = "1.0.1", features = ["serde"] }
