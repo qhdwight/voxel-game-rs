@@ -15,7 +15,8 @@ use bevy::{
 };
 use flagset::{flags, FlagSet};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+
+use crate::RonLoaderError;
 
 flags! {
     pub enum PlayerInputFlags: u32 {
@@ -152,20 +153,11 @@ pub fn player_input_system(
 #[derive(Default)]
 pub struct ConfigAssetLoader;
 
-#[derive(Debug, Error)]
-enum RonLoaderError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    RonSpannedError(#[from] ron::error::SpannedError),
-    #[error(transparent)]
-    LoadDirectError(#[from] bevy::asset::LoadDirectError),
-}
-
 impl AssetLoader for ConfigAssetLoader {
     type Asset = Config;
     type Settings = ();
     type Error = RonLoaderError;
+
     fn load<'a>(
         &'a self,
         reader: &'a mut Reader,
@@ -181,6 +173,6 @@ impl AssetLoader for ConfigAssetLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["config.toml"]
+        &["config.ron"]
     }
 }

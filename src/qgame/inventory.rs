@@ -5,19 +5,21 @@ use std::{
 };
 
 use bevy::{
-    asset::{AssetLoader, LoadContext},
+    asset::{
+        AssetLoader,
+        AsyncReadExt,
+        io::Reader,
+        LoadContext,
+    },
     prelude::*,
     reflect::TypePath,
     utils::{BoxedFuture, HashMap},
 };
-use bevy::asset::AsyncReadExt;
-use bevy::asset::io::Reader;
 use bevy_rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String;
-use thiserror::Error;
 
-use crate::{PlayerInput, PlayerInputFlags};
+use crate::{PlayerInput, PlayerInputFlags, RonLoaderError};
 
 const EQUIPPING_STATE: &str = "equipping";
 const EQUIPPED_STATE: &str = "equipped";
@@ -107,20 +109,9 @@ impl Plugin for InventoryPlugin {
 #[derive(Default)]
 pub struct GunPropsAssetLoader;
 
-#[derive(Debug, Error)]
-enum RonLoaderError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    RonSpannedError(#[from] ron::error::SpannedError),
-    #[error(transparent)]
-    LoadDirectError(#[from] bevy::asset::LoadDirectError),
-}
-
 impl AssetLoader for GunPropsAssetLoader {
     type Asset = GunProps;
     type Settings = ();
-
     type Error = RonLoaderError;
 
     fn load<'a>(
@@ -138,7 +129,7 @@ impl AssetLoader for GunPropsAssetLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["config.toml"]
+        &["config.ron"]
     }
 }
 
@@ -394,7 +385,7 @@ pub fn render_inventory_sys(
                 if let Ok(item) = item_query.get(*item_ent) {
                     let is_equipped = inv.equipped_slot == Some(item.inv_slot);
                     let mut transform = Transform::default();
-                    let scene_handle = asset_server.load(format!("models/{}.glb#Scene0", item.name).as_str());
+                    let scene_handle = asset_server.load(format!("models/{}.glb#Scene0", item.name));
                     if is_equipped {
                         transform = camera_query.single().mul_transform(Transform::from_xyz(0.4, -0.3, -1.0));
                     }
