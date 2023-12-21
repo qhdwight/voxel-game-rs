@@ -1,17 +1,21 @@
 use std::f32::consts::FRAC_PI_2;
-use std::str::from_utf8;
 
 use bevy::{
-    asset::{AssetLoader, LoadContext, LoadedAsset},
+    asset::{
+        AssetLoader,
+        AsyncReadExt,
+        io::Reader,
+        LoadContext,
+    },
     input::mouse::MouseMotion,
     prelude::*,
     reflect::TypePath,
-    reflect::TypeUuid,
     utils::BoxedFuture,
+    window::CursorGrabMode,
 };
-use bevy::window::CursorGrabMode;
 use flagset::{flags, FlagSet};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 flags! {
     pub enum PlayerInputFlags: u32 {
@@ -32,8 +36,7 @@ pub struct PlayerInput {
     pub wanted_item_slot: Option<u8>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, TypeUuid, TypePath)]
-#[uuid = "9ac18a62-063a-4fa1-9575-d295ce69997b"]
+#[derive(Asset, Copy, Clone, Debug, PartialEq, Serialize, Deserialize, TypePath)]
 pub struct Config {
     pub sensitivity: f32,
     pub key_forward: KeyCode,
@@ -116,7 +119,7 @@ pub fn player_input_system(
             let window = window.single_mut();
             if window.focused {
                 let mut mouse_delta = Vec2::ZERO;
-                for mouse_event in mouse_events.iter() {
+                for mouse_event in mouse_events.read() {
                     mouse_delta += mouse_event.delta;
                 }
                 mouse_delta *= config.sensitivity;
@@ -149,16 +152,31 @@ pub fn player_input_system(
 #[derive(Default)]
 pub struct ConfigAssetLoader;
 
+#[derive(Debug, Error)]
+enum RonLoaderError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    RonSpannedError(#[from] ron::error::SpannedError),
+    #[error(transparent)]
+    LoadDirectError(#[from] bevy::asset::LoadDirectError),
+}
+
 impl AssetLoader for ConfigAssetLoader {
+    type Asset = Config;
+    type Settings = ();
+    type Error = RonLoaderError;
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
+        _load_context: &'a mut LoadContext,
+    ) -> BoxedFuture<'a, Result<Config, Self::Error>> {
         Box::pin(async move {
-            let asset: Config = toml::from_str(from_utf8(bytes)?)?;
-            load_context.set_default_asset(LoadedAsset::new(asset));
-            Ok(())
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            let asset = ron::de::from_bytes::<Config>(&bytes)?;
+            Ok(asset)
         })
     }
 

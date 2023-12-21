@@ -3,11 +3,9 @@ extern crate core;
 use std::{
     f32::consts::TAU,
     fmt::Write,
-    time::Duration,
 };
 
 use bevy::{
-    asset::ChangeWatcher,
     diagnostic::DiagnosticsStore,
     diagnostic::FrameTimeDiagnosticsPlugin,
     prelude::*,
@@ -46,19 +44,14 @@ fn main() {
             ..default()
         })
         .add_plugins((
-            DefaultPlugins.set(AssetPlugin {
-                watch_for_changes: Some(ChangeWatcher {
-                    delay: Duration::from_millis(100),
-                }),
-                ..default()
-            }),
+            DefaultPlugins.set(AssetPlugin::default()),
             RapierPhysicsPlugin::<NoUserData>::default(),
             VoxelsPlugin,
             FrameTimeDiagnosticsPlugin::default(),
             InventoryPlugin,
         ))
-        .add_asset::<Config>()
-        .init_asset_loader::<ConfigAssetLoader>()
+        .register_asset_loader(ConfigAssetLoader)
+        .init_asset::<Config>()
         .add_systems(Startup, (setup_sys, spawn_ui_sys, spawn_voxel_sys, spawn_player_sys))
         .add_systems(PreUpdate, player_input_system)
         .add_systems(Update, (
@@ -77,7 +70,7 @@ fn setup_sys(
 ) {
     // println!("{}", toml::to_string(&Config::default()).unwrap());
 
-    let config: Handle<Config> = asset_server.load("default.config.toml");
+    let config: Handle<Config> = asset_server.load("default.config.ron");
     commands.insert_resource(ConfigState { handle: config });
 
     commands.spawn(DirectionalLightBundle {
@@ -114,8 +107,7 @@ fn setup_sys(
             GlobalTransform::default(),
             Collider::ball(0.5),
             Sensor,
-            Visibility::Visible,
-            ComputedVisibility::default(),
+            VisibilityBundle::default(),
             ItemPickup { item_name: ItemName::from("rifle") },
         )
     ).with_children(|parent| {
@@ -210,10 +202,8 @@ fn spawn_player_sys(mut commands: Commands) {
         RigidBody::Dynamic,
         Sleeping::disabled(),
         LockedAxes::ROTATION_LOCKED,
-        ReadMassProperties(MassProperties {
-            mass: 1.0,
-            ..default()
-        }),
+        AdditionalMassProperties::Mass(1.0),
+        ReadMassProperties::default(),
         GravityScale(0.0),
         Ccd { enabled: true },
         TransformBundle::from(Transform::from_xyz(4.0, 18.0, 4.0)),
