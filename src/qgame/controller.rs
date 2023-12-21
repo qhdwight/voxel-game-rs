@@ -149,7 +149,7 @@ pub fn player_move_sys(
                     let groups = QueryFilter::default().exclude_collider(entity);
 
                     if let Some((_handle, hit)) = physics_context.cast_shape(
-                        pos, rot, cast_vel, &cast_capsule, max_dist, groups,
+                        pos, rot, cast_vel, &cast_capsule, max_dist, true, groups,
                     ) {
                         ground_hit = Some(hit);
                     }

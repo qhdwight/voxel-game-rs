@@ -10,6 +10,7 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
     },
 };
+use thiserror::Error;
 
 pub use controller::*;
 pub use input::*;
@@ -22,6 +23,16 @@ mod input;
 mod inventory;
 mod lookup;
 mod voxel;
+
+#[derive(Debug, Error)]
+pub enum RonLoaderError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    RonSpannedError(#[from] ron::error::SpannedError),
+    #[error(transparent)]
+    LoadDirectError(#[from] bevy::asset::LoadDirectError),
+}
 
 pub struct BufVec<T: Pod> {
     read_only: bool,
@@ -44,7 +55,7 @@ pub fn create_staging_buffer(read_only: bool, size: usize, device: &RenderDevice
     })
 }
 
-pub fn create_buffer(read_only: bool, size: usize, device: &RenderDevice) -> Buffer {
+pub fn create_buffer(_read_only: bool, size: usize, device: &RenderDevice) -> Buffer {
     // let mut usage = BufferUsages::STORAGE | if read_only {
     //     BufferUsages::COPY_SRC
     // } else {

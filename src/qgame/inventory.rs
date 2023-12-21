@@ -3,20 +3,23 @@ use std::{
     option::Option,
     time::Duration,
 };
-use std::str::from_utf8;
 
 use bevy::{
-    asset::{AssetLoader, LoadContext, LoadedAsset},
+    asset::{
+        AssetLoader,
+        AsyncReadExt,
+        io::Reader,
+        LoadContext,
+    },
     prelude::*,
     reflect::TypePath,
-    reflect::TypeUuid,
     utils::{BoxedFuture, HashMap},
 };
 use bevy_rapier3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String;
 
-use crate::{PlayerInput, PlayerInputFlags};
+use crate::{PlayerInput, PlayerInputFlags, RonLoaderError};
 
 const EQUIPPING_STATE: &str = "equipping";
 const EQUIPPED_STATE: &str = "equipped";
@@ -36,8 +39,7 @@ pub struct ItemStateProps {
     pub is_persistent: bool,
 }
 
-#[derive(Serialize, Deserialize, TypeUuid, TypePath)]
-#[uuid = "2cc54620-95c6-4522-b40e-0a4991ebae5f"]
+#[derive(Serialize, Deserialize, TypePath)]
 pub struct ItemProps {
     pub name: ItemName,
     pub move_factor: f32,
@@ -45,16 +47,14 @@ pub struct ItemProps {
     pub equip_states: HashMap<EquipStateName, ItemStateProps>,
 }
 
-#[derive(Serialize, Deserialize, TypeUuid, TypePath)]
-#[uuid = "46e9c7af-27c2-4560-86e7-df48f9e84729"]
+#[derive(Serialize, Deserialize, TypePath)]
 pub struct WeaponProps {
     pub damage: u16,
     pub headshot_factor: f32,
     pub item_props: ItemProps,
 }
 
-#[derive(Serialize, Deserialize, TypeUuid, TypePath)]
-#[uuid = "df56751c-7560-420d-b480-eb8fb6f9b9bf"]
+#[derive(Asset, Serialize, Deserialize, TypePath)]
 pub struct GunProps {
     pub mag_size: u16,
     pub starting_ammo_in_reserve: u16,
@@ -103,27 +103,33 @@ pub struct Inventory {
 pub struct InventoryPlugin;
 
 impl Plugin for InventoryPlugin {
-    fn build(&self, app: &mut App) {}
+    fn build(&self, _app: &mut App) {}
 }
 
 #[derive(Default)]
-pub struct ConfigAssetLoader;
+pub struct GunPropsAssetLoader;
 
-impl AssetLoader for ConfigAssetLoader {
+impl AssetLoader for GunPropsAssetLoader {
+    type Asset = GunProps;
+    type Settings = ();
+    type Error = RonLoaderError;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
+        _load_context: &'a mut LoadContext,
+    ) -> BoxedFuture<'a, Result<GunProps, Self::Error>> {
         Box::pin(async move {
-            let asset: GunProps = toml::from_str(from_utf8(bytes)?)?;
-            load_context.set_default_asset(LoadedAsset::new(asset));
-            Ok(())
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            let asset: GunProps = ron::de::from_bytes(&bytes)?;
+            Ok(asset)
         })
     }
 
     fn extensions(&self) -> &[&str] {
-        &["config.toml"]
+        &["config.ron"]
     }
 }
 
@@ -136,7 +142,7 @@ impl AssetLoader for ConfigAssetLoader {
 
 pub fn modify_equip_state_sys(
     time: Res<Time>,
-    asset_server: Res<AssetServer>,
+    _asset_server: Res<AssetServer>,
     mut inv_query: Query<(&PlayerInput, &mut Inventory)>,
     mut item_query: Query<&mut Item>,
 ) {
@@ -379,7 +385,7 @@ pub fn render_inventory_sys(
                 if let Ok(item) = item_query.get(*item_ent) {
                     let is_equipped = inv.equipped_slot == Some(item.inv_slot);
                     let mut transform = Transform::default();
-                    let scene_handle = asset_server.load(format!("models/{}.glb#Scene0", item.name).as_str());
+                    let scene_handle = asset_server.load(format!("models/{}.glb#Scene0", item.name));
                     if is_equipped {
                         transform = camera_query.single().mul_transform(Transform::from_xyz(0.4, -0.3, -1.0));
                     }

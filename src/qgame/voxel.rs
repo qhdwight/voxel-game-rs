@@ -209,28 +209,28 @@ pub fn voxel_polygonize_system(
         }
 
         let binding_groups = BindingGroups {
-            simplex: render_device.create_bind_group(&BindGroupDescriptor {
-                label: Some("simplex binding"),
-                layout: &pipeline.simplex_pipeline.get_bind_group_layout(0),
-                entries: &[
-                    BindGroupEntry { binding: 0, resource: buffers.points.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 1, resource: buffers.heights.buffer().as_entire_binding() }
-                ],
-            }),
-            voxels: render_device.create_bind_group(&BindGroupDescriptor {
-                label: Some("voxels binding"),
-                layout: &pipeline.voxels_pipeline.get_bind_group_layout(0),
-                entries: &[
-                    BindGroupEntry { binding: 0, resource: buffers.edge_table.as_entire_binding() },
-                    BindGroupEntry { binding: 1, resource: buffers.tri_table.as_entire_binding() },
-                    BindGroupEntry { binding: 2, resource: buffers.voxels.as_entire_binding() },
-                    BindGroupEntry { binding: 3, resource: buffers.atomics.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 4, resource: buffers.vertices.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 5, resource: buffers.normals.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 6, resource: buffers.indices.buffer().as_entire_binding() },
-                    BindGroupEntry { binding: 7, resource: buffers.uvs.buffer().as_entire_binding() },
-                ],
-            }),
+            simplex: render_device.create_bind_group(
+                "simplex binding",
+                &pipeline.simplex_pipeline.get_bind_group_layout(0).into(),
+                &BindGroupEntries::sequential((
+                    buffers.points.buffer().as_entire_binding(),
+                    buffers.heights.buffer().as_entire_binding(),
+                )),
+            ),
+            voxels: render_device.create_bind_group(
+                "voxels binding",
+                &pipeline.voxels_pipeline.get_bind_group_layout(0).into(),
+                &BindGroupEntries::sequential((
+                    buffers.edge_table.as_entire_binding(),
+                    buffers.tri_table.as_entire_binding(),
+                    buffers.voxels.as_entire_binding(),
+                    buffers.atomics.buffer().as_entire_binding(),
+                    buffers.vertices.buffer().as_entire_binding(),
+                    buffers.normals.buffer().as_entire_binding(),
+                    buffers.indices.buffer().as_entire_binding(),
+                    buffers.uvs.buffer().as_entire_binding(),
+                )),
+            ),
         };
 
         if !buffers.points.is_empty() {
