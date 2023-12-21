@@ -1,15 +1,15 @@
 Config(
-    sensitivity: 0.001
-    key_forward: W
-    key_back: S
-    key_left: A
-    key_right: D
-    key_up: Space
-    key_down: ControlLeft
-    key_sprint: ShiftLeft
-    key_jump: Space
-    key_crouch: ControlLeft
-    key_fly: F
-    key_reload: R
-    key_fire: Q
+    sensitivity: 0.001,
+    key_forward: W,
+    key_back: S,
+    key_left: A,
+    key_right: D,
+    key_up: Space,
+    key_down: ControlLeft,
+    key_sprint: ShiftLeft,
+    key_jump: Space,
+    key_crouch: ControlLeft,
+    key_fly: F,
+    key_reload: R,
+    key_fire: Q,
 )
